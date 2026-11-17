@@ -21,8 +21,9 @@ services:
     volumes:
       - ./data:/data                 # les données de l'outil, dans le dossier de l'application
     healthcheck:
-      # À ADAPTER à l'image (exemple) :
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:{{PORT_INTERNE}}/sante || exit 1"]
+      # À ADAPTER à l'image (exemple). L'image Python proposée n'a ni wget ni curl : on interroge l'adresse de santé
+      # avec Python lui-même. Pas de réponse ou erreur HTTP : le programme sort en échec (code non nul).
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:{{PORT_INTERNE}}/sante', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 3

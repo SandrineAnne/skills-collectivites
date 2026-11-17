@@ -56,6 +56,36 @@
       delay: 3
       until: sante.status == 200
 
+    # Le format ne plante pas quand le conteneur n'a pas de vérification de santé : il n'écrit alors rien.
+    # « starting » = la première vérification n'est pas encore passée : on attend un peu (jusqu'à 60 s).
+    - name: Lire l'état de santé du conteneur
+      ansible.builtin.command:
+        cmd: >-
+          {{ moteur }} inspect --format
+          '{{ '{{' }}if .State.Health{{ '}}' }}{{ '{{' }}.State.Health.Status{{ '}}' }}{{ '{{' }}end{{ '}}' }}'
+          {{ conteneur }}
+      register: sante_conteneur
+      changed_when: false
+      retries: 12
+      delay: 5
+      until: sante_conteneur.stdout | trim != 'starting'
+      failed_when: sante_conteneur.rc != 0       # l'état « starting » qui dure est refusé juste après, avec un message clair
+
+    - name: Le conteneur n'a pas de vérification de santé (healthcheck)
+      ansible.builtin.debug:
+        msg: >-
+          Le conteneur {{ conteneur }} ne définit pas de vérification de santé : son état n'est pas contrôlé ici.
+          Ajouter un « healthcheck » au compose.yaml (voir l'exemple dans ce fichier).
+      when: sante_conteneur.stdout | trim == ''
+
+    - name: Le conteneur est en bonne santé (healthcheck)
+      ansible.builtin.assert:
+        that: sante_conteneur.stdout | trim in ['', 'healthy']
+        fail_msg: >-
+          Le conteneur {{ conteneur }} n'est pas en bonne santé : état « {{ sante_conteneur.stdout | trim }} » au lieu de
+          « healthy ». Voir {{ moteur }} inspect {{ conteneur }} et {{ moteur }} logs {{ conteneur }}. Le healthcheck du
+          compose.yaml est un exemple à adapter à l'image : vérifier qu'il tourne bien dans l'image réelle.
+
     - name: La version en service est celle attendue
       ansible.builtin.assert:
         that: version_attendue in (sante.content | default(''))

@@ -52,11 +52,28 @@
         mode: "0644"
       loop: "{{ fichiers_deploiement }}"
 
+    # L'étiquette « avant-maj » est posée sur le nom du dépôt seul (sans la version ni l'empreinte) : le « : » d'un
+    # port de registre (registre.exemple.fr:5000/app:1.0) n'est donc pas pris pour celui de la version.
+    # Elle n'est pas déplacée quand l'image en service est déjà celle que le compose.yaml va lancer (même version
+    # rejouée : on perdrait la version précédente), ni quand l'image en service est déjà « avant-maj ».
+    # Podman rend le nom complet (docker.io/library/nginx:1.27.3) là où le compose.yaml porte le nom court :
+    # les deux sont ramenés au nom court avant d'être comparés.
     - name: Garder l'image en service sous l'étiquette de retour arrière
       ansible.builtin.shell: |
         set -e
+        court() { local n="$1"; n="${n#docker.io/library/}"; n="${n#docker.io/}"; n="${n#localhost/}"; echo "$n"; }
         img=$({{ moteur }} inspect --format '{{ '{{' }}.Config.Image{{ '}}' }}' "{{ conteneur }}" 2>/dev/null || true)
-        if [ -n "$img" ]; then {{ moteur }} tag "$img" "${img%%:*}:avant-maj"; fi
+        a_lancer=$(awk '$1 == "image:" { gsub(/[^A-Za-z0-9._:@\/-]/, "", $2); print $2; exit }' "{{ app_dir }}/compose.yaml")
+        if [ -n "$img" ]; then
+          depot="${img%%@*}"
+          case "${depot##*/}" in *:*) depot="${depot%:*}" ;; esac
+          retour="$depot:avant-maj"
+          if [ "$(court "$img")" = "$(court "$a_lancer")" ] || [ "$img" = "$retour" ]; then
+            echo "Étiquette avant-maj laissée telle quelle : l'image en service est déjà celle à lancer ou déjà avant-maj."
+          else
+            {{ moteur }} tag "$img" "$retour"
+          fi
+        fi
       args:
         executable: /bin/bash
       changed_when: false
@@ -82,11 +99,31 @@
         dest: "{{ vhost_dir | default('/etc/nginx/conf.d') }}/{{DOMAINE}}.conf"
         remote_src: true
         mode: "0644"
+      register: vhost
       when: deploy_vhost | bool
 
+    # Sans vhost posé, nginx n'est pas touché (le serveur peut même ne pas l'avoir).
     - name: Tester la configuration nginx
       ansible.builtin.command: nginx -t
+      register: test_nginx
       changed_when: false
+      failed_when: false
+      when: deploy_vhost | bool
+
+    - name: Arrêt si la configuration nginx est invalide
+      ansible.builtin.assert:
+        that: test_nginx.rc == 0
+        fail_msg: >-
+          Le vhost a été copié dans {{ vhost_dir | default('/etc/nginx/conf.d') }}/{{DOMAINE}}.conf mais nginx n'a PAS été
+          rechargé, car « nginx -t » échoue (sortie : {{ test_nginx.stderr | default('') | trim }}).
+          Corriger la configuration, puis relancer ce playbook. Si le vhost n'a pas changé entre-temps, le playbook ne
+          recharge pas nginx : le faire alors à la main (nginx -s reload).
+      when: deploy_vhost | bool
+
+    - name: Recharger nginx (seulement si le vhost a changé)
+      ansible.builtin.command: nginx -s reload
+      changed_when: true
+      when: deploy_vhost | bool and vhost is changed
 
     - name: Rappel
       ansible.builtin.debug:

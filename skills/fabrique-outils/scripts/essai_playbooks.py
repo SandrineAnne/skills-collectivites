@@ -27,13 +27,21 @@ for _flux in (sys.stdout, sys.stderr):          # consoles Windows : toujours é
         _flux.reconfigure(encoding='utf-8', errors='replace')
 
 SC = pathlib.Path(__file__).resolve().parent
+FAUX_NGINX = """#!/bin/sh
+# Faux nginx : note chaque appel ; FAUX_NGINX_RC est son code de sortie (0 par défaut).
+echo "$*" >> "$FAUX_NGINX"
+exit "${FAUX_NGINX_RC:-0}"
+"""
 FAUX_MOTEUR = """#!/bin/sh
 # Faux moteur de conteneurs : répond aux seules questions posées par les playbooks.
 case "$*" in
   *State.Status*) echo running ;;
+  *State.Health*)                          # FAUX_SANTE : état de santé (vide = pas de vérification de santé)
+    if [ -n "$FAUX_DEMARRAGE" ] && [ ! -e "$FAUX_DEMARRAGE" ]; then : > "$FAUX_DEMARRAGE"; echo starting
+    else printf '%s\\n' "${FAUX_SANTE-healthy}"; fi ;;
   *RestartPolicy*) echo "${FAUX_RESTART:-always}" ;;
   *Config.Image*) echo "${FAUX_IMAGE:-docker.io/library/nginx:1.27.3}" ;;
-  tag*) exit 0 ;;
+  tag*) echo "$*" >> "$FAUX_ETIQUETTES" ;;
   compose*) echo "$0 $*" >> "$FAUX_JOURNAL" ;;
   *) echo "appel inattendu : $*" >&2; exit 3 ;;
 esac
@@ -79,12 +87,13 @@ def preparer(tmp: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, dict[str, s
     appli.mkdir()
     for nom in ('podman', 'docker'):
         (faux / nom).write_text(FAUX_MOTEUR, encoding='utf-8')
-    (faux / 'nginx').write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')
+    (faux / 'nginx').write_text(FAUX_NGINX, encoding='utf-8')
     for outil in faux.iterdir():
         outil.chmod(0o755)
     (appli / '.env').write_text('APP_SECRET=essai\n', encoding='utf-8')
     (appli / '.env').chmod(0o600)
     env = {**os.environ, 'PATH': f'{faux}{os.pathsep}{os.environ["PATH"]}', 'FAUX_JOURNAL': str(tmp / 'journal.txt'),
+           'FAUX_ETIQUETTES': str(tmp / 'etiquettes.txt'), 'FAUX_NGINX': str(tmp / 'nginx.txt'), 'FAUX_DEMARRAGE': '',
            'ANSIBLE_NOCOLOR': '1', 'ANSIBLE_LOCALHOST_WARNING': 'False'}
     return tmp / 'demo' / 'deploy', appli, env
 
@@ -119,6 +128,74 @@ def essais(deploy: pathlib.Path, appli: pathlib.Path, port: int, env: dict[str, 
     verifier(jouer(deploiement, appli, port, env).returncode != 0, 'le déploiement s\'arrête si .env est trop ouvert')
     (appli / '.env').chmod(0o600)
     verifier(jouer(deploiement, appli, port, env, 'moteur=lxc').returncode != 0, 'un moteur inconnu est refusé')
+    essais_sante(controle, appli, port, env)
+    essais_etiquette(deploiement, appli, port, env)
+    essais_nginx(deploiement, appli, port, env)
+
+
+def vider(env: dict[str, str], *cles: str) -> None:
+    """Efface les notes du faux moteur et du faux nginx avant un essai."""
+    for cle in cles:
+        pathlib.Path(env[cle]).write_text('', encoding='utf-8')
+
+
+def lignes(env: dict[str, str], cle: str) -> list[str]:
+    return pathlib.Path(env[cle]).read_text(encoding='utf-8').splitlines()
+
+
+def essais_sante(controle: pathlib.Path, appli: pathlib.Path, port: int, env: dict[str, str]) -> None:
+    print('\n— État de santé du conteneur')
+    r = jouer(controle, appli, port, {**env, 'FAUX_SANTE': 'unhealthy'})
+    verifier(r.returncode != 0 and 'pas en bonne santé' in r.stdout, 'un conteneur « unhealthy » fait échouer le contrôle, avec un message clair', r.stdout)
+    r = jouer(controle, appli, port, {**env, 'FAUX_SANTE': ''})
+    verifier(r.returncode == 0 and 'ne définit pas de vérification de santé' in r.stdout,
+             'un conteneur sans vérification de santé passe, et le contrôle le dit', r.stdout)
+    with tempfile.TemporaryDirectory() as dossier:
+        r = jouer(controle, appli, port, {**env, 'FAUX_DEMARRAGE': str(pathlib.Path(dossier) / 'deja-demande')})
+    verifier(r.returncode == 0 and r.stdout.count('FAILED - RETRYING') == 1,
+             'un conteneur encore en démarrage (« starting ») est attendu, puis accepté', r.stdout)
+
+
+def essais_etiquette(deploiement: pathlib.Path, appli: pathlib.Path, port: int, env: dict[str, str]) -> None:
+    print('\n— Étiquette de retour arrière « avant-maj » (le compose.yaml du projet d\'essai lance nginx:1.27.3)')
+    empreinte = 'sha256:' + 'ab12' * 16
+    cas = (('une version précédente reçoit l\'étiquette avant-maj', 'nginx:1.26.0', ['tag nginx:1.26.0 nginx:avant-maj']),
+           ('un registre avec port garde son port : registre.exemple.fr:5000/app:1.0', 'registre.exemple.fr:5000/app:1.0',
+            ['tag registre.exemple.fr:5000/app:1.0 registre.exemple.fr:5000/app:avant-maj']),
+           ('une image désignée par son empreinte ne fait pas échouer le déploiement', f'depot/app@{empreinte}',
+            [f'tag depot/app@{empreinte} depot/app:avant-maj']),
+           ('rejouer la même version ne déplace pas l\'étiquette', 'nginx:1.27.3', []),
+           ('ni quand le moteur rend son nom complet (Podman)', 'docker.io/library/nginx:1.27.3', []),
+           ('une image déjà étiquetée avant-maj n\'est pas re-étiquetée', 'nginx:avant-maj', []))
+    for libelle, image, attendu in cas:
+        vider(env, 'FAUX_ETIQUETTES')
+        r = jouer(deploiement, appli, port, {**env, 'FAUX_IMAGE': image})
+        verifier(r.returncode == 0 and lignes(env, 'FAUX_ETIQUETTES') == attendu, libelle,
+                 f'étiquettes posées : {lignes(env, "FAUX_ETIQUETTES")}\n{r.stdout}')
+
+
+def essais_nginx(deploiement: pathlib.Path, appli: pathlib.Path, port: int, env: dict[str, str]) -> None:
+    print('\n— nginx')
+    vhosts = appli / 'vhosts'
+    vhosts.mkdir()
+    options = ('deploy_vhost=true', f'vhost_dir={vhosts}')
+    vider(env, 'FAUX_NGINX')
+    r = jouer(deploiement, appli, port, env)
+    verifier(r.returncode == 0 and lignes(env, 'FAUX_NGINX') == [] and not list(vhosts.glob('*.conf')),
+             'sans vhost à poser, nginx n\'est pas appelé', r.stdout)
+    r = jouer(deploiement, appli, port, env, *options)
+    verifier(r.returncode == 0 and len(list(vhosts.glob('*.conf'))) == 1 and lignes(env, 'FAUX_NGINX') == ['-t', '-s reload'],
+             'vhost posé : la configuration est testée, puis nginx est rechargé', f'appels à nginx : {lignes(env, "FAUX_NGINX")}\n{r.stdout}')
+    vider(env, 'FAUX_NGINX')
+    r = jouer(deploiement, appli, port, env, *options)
+    verifier(r.returncode == 0 and lignes(env, 'FAUX_NGINX') == ['-t'], 'vhost inchangé : testé, mais nginx n\'est pas rechargé',
+             f'appels à nginx : {lignes(env, "FAUX_NGINX")}\n{r.stdout}')
+    for fichier in vhosts.glob('*.conf'):
+        fichier.unlink()
+    vider(env, 'FAUX_NGINX')
+    r = jouer(deploiement, appli, port, {**env, 'FAUX_NGINX_RC': '1'}, *options)
+    verifier(r.returncode != 0 and 'PAS été rechargé' in r.stdout and '-s reload' not in lignes(env, 'FAUX_NGINX'),
+             'configuration nginx refusée : le playbook s\'arrête sans recharger, et le dit', f'appels à nginx : {lignes(env, "FAUX_NGINX")}\n{r.stdout}')
 
 
 def main() -> int:
