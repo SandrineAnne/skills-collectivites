@@ -69,8 +69,9 @@ def lire(p: pathlib.Path) -> str:
 
 
 def trouver_fabrique(option: str | None) -> pathlib.Path:
-    for candidat in ([pathlib.Path(option)] if option else [ICI.parent.parent / 'fabrique-outils',
-                                                           pathlib.Path('/mnt/skills/plugins/fabrique-outils')]):
+    for candidat in ([pathlib.Path(option)] if option else [
+            pathlib.Path(os.environ.get('FABRIQUE_OUTILS', '/nonexistent')), ICI.parent.parent / 'fabrique-outils',
+            pathlib.Path('/mnt/skills/plugins/fabrique-outils'), pathlib.Path('/mnt/skills/user/fabrique-outils')]):
         if (candidat / 'scripts' / 'creer_projet.py').exists():
             return candidat.resolve()
     sys.exit('Arrêt : skill fabrique-outils introuvable (option --fabrique).')
