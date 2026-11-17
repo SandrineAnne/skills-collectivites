@@ -254,6 +254,17 @@ def essais_veille(banc: Banc, tmp: pathlib.Path) -> None:
     verifier('classe 1 : mode dégradé à écrire' in r.stdout and 'contrôle embarqué ancien (0.9' in r.stdout and 'classe non fixée' in r.stdout,
              'revue : classe 1 sans mode dégradé, contrôle embarqué ancien et outil sans classe signalés', r.stdout)
     verifier('restauration' in texte.split('## À planifier')[1] or 'restauration' in maintenant, 'essai de restauration manquant rappelé pour les autres')
+    verifier('antérieur au correctif de sûreté' in r.stdout.split('## À planifier')[0],
+             'un outil dont le contrôle est antérieur au correctif de sûreté est à traiter maintenant', r.stdout)
+    piege = banc.projet('piege', dossier=parc)
+    (piege / 'src').mkdir(exist_ok=True)
+    (piege / 'src' / 'App.jsx').write_text("function calcul(x) { return eval(x); }\n", encoding='utf-8')
+    # un ancien contrôle complaisant : il accepte tout ; seule une revue qui utilise le contrôle de la skill voit le défaut
+    (piege / 'build' / 'fabriquer.py').write_text("VERSION_CONTROLE = '1.1'\nprint('RÉSULTAT : tout est cohérent.')\n", encoding='utf-8')
+    r = lancer(script, str(parc), '--date', DATE, '--controler', '--fabrique', str(banc.fabrique))
+    bloc_piege = next((b for b in r.stdout.split('\n### ') if b.startswith('Piege')), '')
+    verifier('contrôle en échec' in bloc_piege,
+             'avec --controler, la revue contrôle chaque outil avec le contrôle de la skill, pas avec l\'ancien qu\'il embarque', r.stdout)
     r = lancer(script, str(parc), '--date', DATE, '--chercher', 'nginx')
     verifier(all(n in r.stdout.split('## À traiter')[0] for n in ('sain', 'perime', 'incident')), '--chercher nginx retrouve les outils qui l\'utilisent')
     r = lancer(script, str(parc), '--date', DATE, '--controler')

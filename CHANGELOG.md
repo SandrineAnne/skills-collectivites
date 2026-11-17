@@ -1,5 +1,15 @@
 # Journal des versions
 
+## 0.1.2 — revue des outils et contributions
+
+- **Revue des outils (`entretien-outils`).** Avec `--controler`, la revue contrôlait chaque outil avec le contrôle qu’il embarque, c’est-à-dire l’ancien : repasser le parc au contrôle après le correctif de la 0.1.1 ne changeait rien. Elle utilise désormais le contrôle de la skill, et place en « à traiter maintenant » tout outil dont le contrôle est antérieur au correctif.
+- **Mode essai** tant que la skill n’est pas adaptée : aucun niveau ni score annoncé sans grille remplie (n° 7).
+- **Module de prise en main plus accessible** : contour de focus lisible dans les deux thèmes, bulle entière à fort zoom, focus rendu à la fermeture (n° 9).
+- **Playbooks** : santé du conteneur vérifiée, étiquette de retour arrière conservée, nginx rechargé seulement si le vhost a changé et s’il est valide (n° 10).
+- L’autotest de l’entretien trouve la skill de fabrication aux mêmes endroits que les autres scripts (n° 8).
+
+Merci à Jorge Bravo pour les propositions n° 7 à 10.
+
 ## 0.1.1 — correctif de sûreté
 
 **À installer à la place de la 0.1.0, puis repasser au contrôle tout outil déjà fabriqué.**

@@ -7,7 +7,8 @@ Un outil = un sous-dossier (jusqu'à deux niveaux) qui contient README.md et VER
 docs/composants.md (fin de support), docs/incidents.md (incidents ouverts), docs/derogations.md (revue dépassée),
 docs/fiche-dsi.md (essai de restauration, format B), README (référent).
   --chercher MOT  liste les outils dont les composants, dépendances ou images mentionnent MOT (après une faille annoncée)
-  --controler     lance aussi le build/fabriquer.py de chaque outil (contrôle complet, sans paquet)
+  --controler     lance aussi le contrôle complet de chaque outil (sans paquet), avec le contrôle de la skill de fabrication
+                  quand on la trouve : un outil accepté par un ancien contrôle peut être refusé par le nouveau
 Code de sortie : 1 s'il y a au moins un outil à traiter maintenant, 0 sinon (utile en tâche programmée), 2 si aucun outil trouvé.
 Bibliothèque standard uniquement.
 """
@@ -142,6 +143,21 @@ ICI = pathlib.Path(__file__).resolve().parent
 RE_VERSION_CONTROLE = re.compile(r"(?m)^VERSION_CONTROLE\s*=\s*'([\d.]+)'")
 
 
+# Version du contrôle à partir de laquelle les contournements connus du socle de sûreté sont fermés (correctif du 17/11/2026).
+CONTROLE_SURETE_MINIMAL = '1.2'
+
+
+def controle_de_reference(option: str | None) -> pathlib.Path | None:
+    """Le fabriquer.py livré avec la skill de fabrication, si on le trouve (option --fabrique, ou dossier voisin)."""
+    candidats = [pathlib.Path(option)] if option else [
+        pathlib.Path(os.environ.get('FABRIQUE_OUTILS', '/nonexistent')), ICI.parent.parent / 'fabrique-outils',
+        pathlib.Path('/mnt/skills/plugins/fabrique-outils'), pathlib.Path('/mnt/skills/user/fabrique-outils')]
+    for candidat in candidats:
+        if RE_VERSION_CONTROLE.search(lire(candidat / 'scripts' / 'fabriquer.py')):
+            return candidat / 'scripts' / 'fabriquer.py'
+    return None
+
+
 def version_controle_de_reference(option: str | None) -> str | None:
     """Version du contrôle livrée avec la skill de fabrication, si on la trouve (option --fabrique, ou dossier voisin)."""
     candidats = [pathlib.Path(option)] if option else [
@@ -172,13 +188,18 @@ def examiner_classe(etat: Etat, readme: str, reference: str | None) -> None:
         if re.search(r'(?im)^\s*-\s*Suppléant[^:\n]*:\s*(?:À COMPLÉTER.*)?$', readme):
             etat.planifier.append('classe 1 : suppléant à désigner')
     embarque = RE_VERSION_CONTROLE.search(lire(etat.chemin / 'build' / 'fabriquer.py'))
-    if reference and (embarque is None or en_nombres(embarque.group(1)) < en_nombres(reference)):
-        etat.planifier.append(f'contrôle embarqué ancien ({embarque.group(1) if embarque else "sans version"}, référence {reference}) : '
-                              'remettre_a_niveau.py --mettre-a-jour-fabriquer')
+    version = embarque.group(1) if embarque else None
+    if reference and (version is None or en_nombres(version) < en_nombres(reference)):
+        message = (f'contrôle embarqué ancien ({version or "sans version"}, référence {reference}) : '
+                   'remettre_a_niveau.py --mettre-a-jour-fabriquer, puis repasser l\'outil au contrôle')
+        avant_correctif = version is None or en_nombres(version) < en_nombres(CONTROLE_SURETE_MINIMAL)
+        (etat.maintenant if avant_correctif and en_nombres(reference) >= en_nombres(CONTROLE_SURETE_MINIMAL) else etat.planifier).append(
+            message + (' — antérieur au correctif de sûreté du contrôle' if avant_correctif else ''))
 
 
-def controler(etat: Etat, aujourdhui: datetime.date) -> None:
-    script = etat.chemin / 'build' / 'fabriquer.py'
+def controler(etat: Etat, aujourdhui: datetime.date, script_reference: pathlib.Path | None = None) -> None:
+    """Contrôle complet de l'outil, avec le contrôle de la skill s'il est fourni : jamais seulement avec celui qu'il embarque."""
+    script = script_reference or etat.chemin / 'build' / 'fabriquer.py'
     if not script.exists():
         etat.planifier.append('pas de build/fabriquer.py : contrôle impossible (parcours 2, remise à niveau)')
         return
@@ -193,7 +214,8 @@ def controler(etat: Etat, aujourdhui: datetime.date) -> None:
         etat.maintenant.append(f'contrôle en échec ({nombre.group(1) if nombre else "?"} point(s)) : voir dist/dossier-transmission.md de l\'outil')
 
 
-def examiner(chemin: pathlib.Path, aujourdhui: datetime.date, avec_controle: bool, reference: str | None = None) -> Etat:
+def examiner(chemin: pathlib.Path, aujourdhui: datetime.date, avec_controle: bool, reference: str | None = None,
+             script_reference: pathlib.Path | None = None) -> Etat:
     readme = lire(chemin / 'README.md')
     titre = re.search(r'(?m)^#\s*(.+)$', readme)
     fmt = re.search(r'(?im)^Format\s*:\s*([ABCD])', readme)
@@ -205,7 +227,7 @@ def examiner(chemin: pathlib.Path, aujourdhui: datetime.date, avec_controle: boo
     examiner_editeur(etat, aujourdhui)
     examiner_classe(etat, readme, reference)
     if avec_controle:
-        controler(etat, aujourdhui)
+        controler(etat, aujourdhui, script_reference)
     return etat
 
 
@@ -265,7 +287,8 @@ def main(argv: list[str]) -> int:
               file=sys.stderr)
         return 2
     reference = version_controle_de_reference(options.fabrique)
-    etats = [examiner(chemin, aujourdhui, options.controler, reference) for chemin in outils]
+    script_reference = controle_de_reference(options.fabrique)
+    etats = [examiner(chemin, aujourdhui, options.controler, reference, script_reference) for chemin in outils]
     recherche = (options.chercher, chercher(outils, options.chercher)) if options.chercher else None
     rapport = rediger(racine, etats, aujourdhui, recherche)
     if options.sortie:

@@ -1,6 +1,6 @@
 # Fabriquer et entretenir des outils avec l’IA — deux skills Claude
 
-**Version 0.1.1 · première ébauche publique · à tester, critiquer, améliorer.**
+**Version 0.1.2 · première ébauche publique · à tester, critiquer, améliorer.**
 
 Avec Claude, un agent peut fabriquer lui-même, en quelques heures, l’outil dont son service a besoin. Entretenir cet outil dure des années. Ces deux skills génériques encadrent les deux temps, pour toute collectivité ou administration qui veut laisser ses agents créer sans renoncer à la sûreté. Elles sont nées d’un premier usage au Département du Loiret ; nous les partageons pour que d’autres les essaient et nous aident à les améliorer.
 
@@ -48,7 +48,7 @@ Les contournements connus sont rejoués par `autotest_surete.py`. Vous en trouve
 C’est une ébauche, et nous le disons franchement :
 
 - les skills n’ont pas encore été éprouvées sur un vrai incident ;
-- les playbooks de déploiement ont été essayés sur un vrai Docker par un contributeur : six défauts sont connus et pas encore corrigés (contrôle de santé, retour arrière, dossier de données… voir le ticket n° 4) ;
+- les playbooks de déploiement ont été essayés sur un vrai Docker par un contributeur : trois des six défauts relevés sont corrigés (santé du conteneur, retour arrière, rechargement de nginx), les trois autres restent à faire (ticket n° 4) ;
 - les cas d’essai du comportement de Claude (`evals/evals.json`) n’ont pas encore été joués ;
 - la grille de vigilance est un modèle vide : chaque collectivité la remplit avec sa cybersécurité ;
 - le contenu est en français et pensé pour une collectivité française.

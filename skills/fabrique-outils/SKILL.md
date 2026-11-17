@@ -2,7 +2,7 @@
 name: fabrique-outils
 description: "Méthode et socle qualité pour fabriquer dans une collectivité un outil durable avec Claude Cowork : HTML partagé, application web conteneurisée, MSI ou Grist. DÉCLENCHER quand l'outil servira à d'autres que son auteur ou dans la durée, traite des données de personnes, s'installe sur un serveur ou un poste, remplace un outil existant, ou est montré régulièrement aux élus ou à l'extérieur ; aussi pour faire évoluer ou reprendre un tel outil, ou sur transcription d'un besoin. NE PAS DÉCLENCHER pour un fichier HTML jetable, pour soi ou une réunion (calculette, graphique de diaporama, mini-tableau de bord ponctuel, sans donnée de personne). Dans le doute, déclencher et poser la question du curseur. Impose : questions en mots simples, SPEC validée avant de coder, jalons selon la grille de vigilance IA, sécurité et RGPD dès la conception, tutoriel, paquet contrôlé pour la DSI, partage et transmission. Ne couvre pas : assistants documentaires, macros, documents, scripts d'exploitation (fiche dédiée)."
 metadata:
-  version: "0.1.1"
+  version: "0.1.2"
 ---
 
 # Fabrique d'outils et d'applications
