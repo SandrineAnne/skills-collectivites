@@ -61,6 +61,7 @@ Chemin = pathlib.Path
 
 MARQUEUR = 'À COMPLÉTER'
 RE_MARQUEUR = re.compile(r'À[ _-]?COMPLÉTER')
+RE_PLUS_MAINTENU = re.compile(r'(?i)\b(?:plus|non|pas)\s+maintenu')   # « plus maintenu », « non maintenu depuis 2023 »
 EXTENSIONS_TEXTE = {'.py', '.js', '.mjs', '.cjs', '.ts', '.html', '.htm', '.css', '.md', '.txt', '.json', '.yaml', '.yml',
                     '.ini', '.conf', '.sh', '.ps1', '.cfg', '.toml', '.xml', '.csv', '.exemple', '.env', '.vue', ''}
 DOSSIERS_IGNORES = {'.git', 'node_modules', 'dist', '__pycache__', 'data', '.venv', 'venv', 'vendor', '.pytest_cache',
@@ -1111,6 +1112,8 @@ def etat_composant(ctx: Contexte, cases: list[str]) -> tuple[str | None, str | N
         return f'{nom} : date de fin de support non renseignée', None
     date = lire_date(fin)
     if date is None:
+        if RE_PLUS_MAINTENU.search(fin):
+            return f'{nom} : support terminé (« {fin} »)', None
         sans_date = 'sans date' in fin.lower() or 'maintenu' in fin.lower()
         if sans_date and len(cases) >= 5 and cases[4]:
             return None, None

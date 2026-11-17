@@ -28,6 +28,7 @@ for _flux in (sys.stdout, sys.stderr):          # consoles Windows : toujours é
         _flux.reconfigure(encoding='utf-8', errors='replace')
 
 RE_MARQUEUR = re.compile(r'À[ _-]?COMPLÉTER')
+RE_PLUS_MAINTENU = re.compile(r'(?i)\b(?:plus|non|pas)\s+maintenu')   # « plus maintenu », « non maintenu depuis 2023 »
 FICHIERS_DEPENDANCES = ('docs/composants.md', 'requirements.txt', 'package.json', 'deploy/compose.yaml', 'deploy/Dockerfile', 'Dockerfile')
 
 
@@ -86,7 +87,9 @@ def examiner_composants(etat: Etat, aujourdhui: datetime.date) -> None:
         return
     for cases in lignes:
         date = lire_date(cases[3])
-        if date is None and not re.search(r'(?i)sans date|maintenu', cases[3]):
+        if date is None and RE_PLUS_MAINTENU.search(cases[3]):
+            etat.maintenant.append(f'{cases[0]} {cases[1]} : support terminé (« {cases[3]} »)')
+        elif date is None and not re.search(r'(?i)sans date|maintenu', cases[3]):
             etat.planifier.append(f'{cases[0]} : date de fin de support inconnue')
         elif date and date < aujourdhui:
             etat.maintenant.append(f'{cases[0]} {cases[1]} : support terminé depuis le {date.isoformat()}')

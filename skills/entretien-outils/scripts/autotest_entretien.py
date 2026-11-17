@@ -244,7 +244,12 @@ def essais_veille(banc: Banc, tmp: pathlib.Path) -> None:
     controle.write_text(re.sub(r"(?m)^VERSION_CONTROLE = '[0-9.]+'", "VERSION_CONTROLE = '0.9'", lire(controle)), encoding='utf-8')
     sans_classe = banc.projet('sans-classe', dossier=parc)
     (sans_classe / 'README.md').write_text(re.sub(r'(?m)^Classe : .*$', 'Classe : à fixer', lire(sans_classe / 'README.md')), encoding='utf-8')
+    abandonne = banc.projet('abandonne', dossier=parc)
+    (abandonne / 'docs' / 'composants.md').write_text(
+        lire(abandonne / 'docs' / 'composants.md').replace('2027-06', 'non maintenu depuis 2023'), encoding='utf-8')
     r = lancer(script, str(parc), '--date', DATE)
+    verifier('non maintenu depuis 2023' in r.stdout.split('## À planifier')[0],
+             'composant noté « non maintenu » : à traiter maintenant', r.stdout)
     verifier('classe 1 : mode dégradé à écrire' in r.stdout and 'contrôle embarqué ancien (0.9' in r.stdout and 'classe non fixée' in r.stdout,
              'revue : classe 1 sans mode dégradé, contrôle embarqué ancien et outil sans classe signalés', r.stdout)
     verifier('restauration' in texte.split('## À planifier')[1] or 'restauration' in maintenant, 'essai de restauration manquant rappelé pour les autres')
