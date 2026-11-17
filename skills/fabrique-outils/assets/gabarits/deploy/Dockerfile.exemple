@@ -1,0 +1,24 @@
+# Exemple pour une application Python. À adapter, puis renommer en « Dockerfile » (fabriquer.py le contrôle alors).
+# Image de base : une version précise, jamais « latest » (idéalement suivie de @sha256:…).
+# Vérifier la dernière version corrective sur le site de l'éditeur et la reporter dans docs/composants.md.
+FROM python:3.12.8-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Dépendances d'abord (couche réutilisée tant que requirements.txt ne change pas), figées avec leurs empreintes.
+COPY requirements.txt .
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt
+
+COPY src/ ./src/
+
+# L'application ne tourne jamais en root.
+RUN useradd --system --uid 10001 --no-create-home appli
+USER 10001
+
+EXPOSE 8000
+
+# Les journaux vont sur la sortie standard : le moteur de conteneurs et la supervision les récupèrent.
+CMD ["python", "-m", "src.serveur"]

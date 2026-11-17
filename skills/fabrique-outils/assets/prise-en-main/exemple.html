@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exemple — Renommage des pièces (démonstration)</title>
+<link rel="stylesheet" href="prise-en-main.css">
+<style>
+  :root{--fond:#fff;--texte:#1d2433;--ligne:#d9dee8;--surface:#f4f6fa;--fonce:#283583;--accent:#44B5D0;color-scheme:light dark}
+  @media (prefers-color-scheme: dark){:root{--fond:#1b1f2a;--texte:#eef1f7;--ligne:#3a4152;--surface:#252a37;--fonce:#8fa0ff}}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--fond);color:var(--texte)}
+  header{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:14px 20px;border-bottom:4px solid var(--accent)}
+  header h1{font-size:19px;margin:0 auto 0 0;color:var(--fonce)}
+  .barre{display:flex;flex-wrap:wrap;gap:8px}
+  .barre button,.onglets button{font:inherit;padding:7px 12px;border-radius:6px;border:1px solid var(--ligne);background:var(--fond);color:var(--texte);cursor:pointer}
+  main{padding:18px 20px;max-width:1100px}
+  .depot{border:2px dashed var(--accent);border-radius:10px;padding:22px;text-align:center;background:var(--surface);margin-bottom:16px}
+  .onglets{display:flex;gap:6px;margin:6px 0 10px}
+  .onglets button[aria-selected="true"]{background:var(--fonce);color:#fff;border-color:var(--fonce)}
+  .tableau{overflow-x:auto}
+  table{border-collapse:collapse;width:100%;font-size:14px}
+  th,td{border-bottom:1px solid var(--ligne);padding:8px;text-align:left}
+  th{background:var(--surface)}
+  td input{font:inherit;width:100%;min-width:140px;padding:4px 6px}
+  .ok{font:inherit;font-weight:700;background:var(--fonce);color:var(--fond);border:0;border-radius:5px;padding:5px 10px;cursor:pointer}
+  footer{padding:12px 20px;color:#5d6578;font-size:12px}
+  @media print{header .barre,.depot,.onglets{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Renommage des pièces numérisées — démonstration</h1>
+  <div class="barre" id="barre">
+    <button type="button" data-tuto="exporter">Exporter le journal</button>
+    <button type="button" data-tuto="imprimer" onclick="window.print()">Imprimer</button>
+  </div>
+</header>
+<main>
+  <div class="depot" data-tuto="depot">Déposez ici un lot de pièces numérisées (PDF) — données fictives</div>
+  <div class="onglets" role="tablist">
+    <button type="button" role="tab" aria-selected="true" id="o-lot" onclick="ouvrir('lot')">Lot en cours</button>
+    <button type="button" role="tab" aria-selected="false" id="o-journal" onclick="ouvrir('journal')">Journal</button>
+  </div>
+  <section id="v-lot" class="tableau">
+    <table data-tuto="tableau">
+      <thead><tr><th>Pièce</th><th>Type</th><th>Nom proposé</th><th></th></tr></thead>
+      <tbody>
+        <tr><td>lot-0412-01.pdf</td><td>Relevé CPAM</td><td><input data-tuto="nom" value="MARTIN-DURAND Léa"></td><td><button class="ok" data-tuto="valider" type="button">Valider</button></td></tr>
+        <tr><td>lot-0412-02.pdf</td><td>Relevé bancaire</td><td><input value="LEFÈVRE Hugo"></td><td><button class="ok" type="button">Valider</button></td></tr>
+        <tr><td>lot-0412-03.pdf</td><td>Inconnu</td><td><em>À traiter à la main</em></td><td></td></tr>
+      </tbody>
+    </table>
+  </section>
+  <section id="v-journal" hidden>
+    <table data-tuto="journal"><thead><tr><th>Quand</th><th>Qui</th><th>Pièce</th><th>Nom attribué</th></tr></thead>
+      <tbody><tr><td>28/10/2026 09:14</td><td>agent.demo</td><td>lot-0411-07.pdf</td><td>PETIT Jules</td></tr></tbody></table>
+  </section>
+</main>
+<footer>Version 1.1.0 · données entièrement fictives</footer>
+
+<script src="prise-en-main.js"></script>
+<script>
+  function ouvrir(v){
+    ['lot','journal'].forEach(k=>{ document.getElementById('v-'+k).hidden = (k!==v); document.getElementById('o-'+k).setAttribute('aria-selected', String(k===v)); });
+  }
+  PriseEnMain.init({
+    appli: 'demo-renommage', nom: 'Renommage des pièces', version: '1.1.0',
+    bouton: '#barre', referent: 'cellule opérationnelle', suppleant: 'à désigner',
+    lienDoc: 'https://wiki.exemple.invalid/renommage',
+    signalement: 'https://tickets.exemple.invalid/outils-maison',
+    dateVersion: '2026-11-13', peremptionMois: 6, lienDerniereVersion: 'https://wiki.exemple.invalid/renommage',
+    confidentialite: 'Les pièces restent sur le serveur de la collectivité et ne sont transmises à aucun service extérieur.',
+    accueil: {
+      intro: 'L’outil propose un nom pour chaque pièce numérisée ; vous validez. Trois idées pour démarrer.',
+      duree: '2 minutes',
+      idees: [
+        { titre: 'Rien n’est renommé sans vous', texte: 'Chaque nom proposé attend votre clic sur « Valider ».' },
+        { titre: 'En cas de doute, l’outil le dit', texte: 'Une pièce mal lue est marquée « à traiter à la main ».' },
+        { titre: 'Tout est tracé', texte: 'L’onglet Journal garde qui a validé quoi, et quand.' }
+      ]
+    },
+    etapes: [
+      { titre: 'Bienvenue', texte: '<p>Cette visite montre l’essentiel en sept étapes. Flèches du clavier pour avancer, Échap pour quitter.</p>' },
+      { cible: 'depot', titre: 'Déposer un lot', texte: '<p>Glissez ici les PDF issus de la numérisation, intercalaires compris.</p>' },
+      { cible: 'tableau', titre: 'Le lot en cours', texte: '<p>Une ligne par pièce, avec son type et le nom proposé.</p>', avant: () => ouvrir('lot') },
+      { cible: 'nom', titre: 'Corriger si besoin', texte: '<p>Le nom proposé se corrige directement dans la case.</p>' },
+      { cible: 'valider', titre: 'Valider', texte: '<p>Le fichier n’est renommé qu’après ce clic.</p>' },
+      { cible: 'journal', titre: 'Le journal', texte: '<p>Qui a validé quelle pièce, et quand.</p>', avant: () => ouvrir('journal') },
+      { cible: 'aide', titre: 'Besoin d’aide ?', texte: '<p>Ce bouton relance la visite et ouvre le guide complet, imprimable.</p>' }
+    ],
+    surFin: () => ouvrir('lot'),
+    guide: [
+      { titre: 'L’essentiel', intro: 'Une page pour tout comprendre.', html: '<ol><li>Déposer le lot.</li><li>Vérifier chaque nom.</li><li>Valider.</li></ol>' },
+      { titre: 'Pas à pas', intro: 'Le traitement d’un lot.', html: '<h4>Déposer</h4><p>…</p><h4>Vérifier</h4><p>…</p><h4>Valider</h4><p>…</p>' },
+      { titre: 'Questions fréquentes', intro: 'Les cas qui reviennent.', html: '<details><summary>Le nom proposé est faux</summary><p>Corrigez-le avant de valider.</p></details><details><summary>Une pièce est « à traiter à la main »</summary><p>Renommez-la comme avant, dans la GED.</p></details>' }
+    ],
+    nouveautes: { '1.1': '<ul><li>Nouvel onglet <b>Journal</b>.</li><li>Les pièces mal lues sont signalées.</li></ul>' }
+  });
+</script>
+</body>
+</html>

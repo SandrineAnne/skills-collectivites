@@ -1,0 +1,73 @@
+---
+# Contrôle après déploiement de {{TITRE}} — à lancer depuis Semaphore. Lecture seule : ne modifie rien.
+# Il rejoue en production les mêmes contrôles que sur le serveur de test.
+# Variables à donner au lancement : cible (hôte) ; moteur (podman par défaut, ou docker).
+- name: Contrôler {{TITRE}}
+  hosts: "{{ cible }}"
+  become: true
+  gather_facts: false
+  vars:
+    app_nom: "{{NOM}}"
+    app_dir: "/data/apps/{{NOM}}"
+    conteneur: "{{NOM}}-app"
+    moteur: podman                       # podman ou docker, selon le serveur
+    port_local: {{PORT}}
+    chemin_sante: "/sante"               # adapter à l'application
+    version_attendue: "{{VERSION}}"
+    verifier_version: false              # true si l'adresse de santé renvoie le numéro de version
+  tasks:
+    - name: Le conteneur tourne
+      ansible.builtin.command: "{{ moteur }} inspect --format '{{ '{{' }}.State.Status{{ '}}' }}' {{ conteneur }}"
+      register: etat
+      changed_when: false
+      failed_when: etat.stdout | trim != 'running'
+
+    - name: Redémarrage automatique (restart always)
+      ansible.builtin.command: "{{ moteur }} inspect --format '{{ '{{' }}.HostConfig.RestartPolicy.Name{{ '}}' }}' {{ conteneur }}"
+      register: politique
+      changed_when: false
+      failed_when: politique.stdout | trim != 'always'
+
+    - name: L'image a une version précise (jamais « latest »)
+      ansible.builtin.command: "{{ moteur }} inspect --format '{{ '{{' }}.Config.Image{{ '}}' }}' {{ conteneur }}"
+      register: image
+      changed_when: false
+      failed_when: image.stdout | trim is search(':latest$') or (':' not in (image.stdout | trim | regex_replace('@sha256:.*', '')))
+
+    - name: Le port n'est publié que sur 127.0.0.1
+      ansible.builtin.shell: "ss -ltnH | awk '{print $4}' | grep -E '[:.]{{ port_local }}$' || true"
+      register: ecoute
+      changed_when: false
+      failed_when: ecoute.stdout_lines | reject('match', '^127\\.0\\.0\\.1:') | list | length > 0
+
+    - name: Le fichier .env est en droits 600
+      ansible.builtin.stat:
+        path: "{{ app_dir }}/.env"
+      register: env_fichier
+      failed_when: not env_fichier.stat.exists or env_fichier.stat.mode != '0600'
+
+    - name: L'application répond localement
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ port_local }}{{ chemin_sante }}"
+        status_code: 200
+        return_content: true
+      register: sante
+      retries: 5
+      delay: 3
+      until: sante.status == 200
+
+    - name: La version en service est celle attendue
+      ansible.builtin.assert:
+        that: version_attendue in (sante.content | default(''))
+        fail_msg: "La version en service n'est pas {{ version_attendue }} : le déploiement n'a pas pris effet."
+      when: verifier_version | bool
+
+    - name: Configuration nginx valide
+      ansible.builtin.command: nginx -t
+      changed_when: false
+
+    - name: Bilan
+      ansible.builtin.debug:
+        msg: >-
+          Tous les contrôles sont passés pour {{ app_nom }} (image {{ image.stdout | trim }}).
+          Reste : supervision, schéma d'infrastructure, essai de restauration daté dans la fiche DSI.

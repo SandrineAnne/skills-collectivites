@@ -1,0 +1,31 @@
+# {{TITRE}} — version {{VERSION}}
+# Gabarit durci (podman compose ou docker compose). Chaque ligne « DÉROGATION » est une protection qu'on peut retirer
+# uniquement en la notant dans docs/derogations.md.
+services:
+  app:
+    image: {{IMAGE}}                 # version précise, jamais « latest » (idéalement @sha256:…)
+    container_name: {{NOM}}-app
+    restart: always                  # seule valeur relancée après un redémarrage de la VM
+    ports:
+      - "127.0.0.1:{{PORT}}:{{PORT_INTERNE}}"   # jamais sans 127.0.0.1 : on passe par nginx
+    env_file: .env                   # les secrets sont dans .env sur le serveur (droits 600), jamais ici
+    read_only: true                  # DÉROGATION possible si l'application doit écrire dans son image
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL                          # DÉROGATION possible, avec les capacités réellement nécessaires
+    security_opt:
+      - no-new-privileges:true
+    # user: "10001:10001"            # utilisateur non root : à activer si l'image le permet, sinon noter la dérogation
+    mem_limit: 512m
+    volumes:
+      - ./data:/data                 # les données de l'outil, dans le dossier de l'application
+    healthcheck:
+      # À ADAPTER à l'image (exemple) :
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:{{PORT_INTERNE}}/sante || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      outil.application: "{{NOM}}"
+      outil.version: "{{VERSION}}"

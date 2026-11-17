@@ -1,0 +1,7 @@
+# Appels réseau autorisés pour {{TITRE}}
+# Par défaut : AUCUN. Un hôte n'est ajouté ici que si l'outil en a vraiment besoin
+# (exemple : les tuiles d'un fond de carte). Une ligne = un hôte, suivi de la raison.
+# Le contrôle de fabrication refuse tout autre appel vers l'extérieur.
+#
+# Exemple (à décommenter seulement si nécessaire) :
+# data.geopf.fr   fond de carte IGN (tuiles), aucune donnée personnelle envoyée

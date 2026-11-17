@@ -1,0 +1,96 @@
+---
+# Déploiement de {{TITRE}} (v{{VERSION}}) — à lancer depuis Semaphore (ou ansible-playbook).
+# Ordre : serveur de test d'abord, puis production, avec les mêmes fichiers.
+# Variables à donner au lancement : cible (hôte) ; moteur (podman par défaut, ou docker).
+# Ce playbook ne crée et ne lit aucun secret : le fichier .env doit déjà exister sur le serveur.
+- name: Déployer {{TITRE}}
+  hosts: "{{ cible }}"
+  become: true
+  gather_facts: false
+  vars:
+    app_nom: "{{NOM}}"
+    app_version: "{{VERSION}}"
+    app_dir: "/data/apps/{{NOM}}"
+    conteneur: "{{NOM}}-app"
+    moteur: podman                       # podman ou docker, selon le serveur
+    commande_compose: "{{ 'docker compose' if moteur == 'docker' else 'podman compose' }}"
+    fichiers_deploiement:                # pris à côté de ce playbook (dossier deploy/ du dépôt)
+      - compose.yaml
+      - "{{NOM}}.conf"
+      - .env.exemple
+    port_local: {{PORT}}
+    chemin_sante: "/sante"               # adresse qui répond 200 quand l'application est prête (adapter)
+    deploy_vhost: false                  # true seulement après avoir vérifié l'emplacement avec « nginx -T »
+  tasks:
+    - name: Le moteur de conteneurs est connu
+      ansible.builtin.assert:
+        that: moteur in ['podman', 'docker']
+        fail_msg: "La variable « moteur » doit valoir podman ou docker."
+
+    - name: Le dossier de l'application existe
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Le fichier .env existe déjà (jamais créé par ce playbook)
+      ansible.builtin.stat:
+        path: "{{ app_dir }}/.env"
+      register: env_fichier
+
+    - name: Arrêt si .env est absent ou trop ouvert
+      ansible.builtin.assert:
+        that:
+          - env_fichier.stat.exists
+          - env_fichier.stat.mode == '0600'
+        fail_msg: "Créer {{ app_dir }}/.env à partir de .env.exemple, puis chmod 600."
+
+    - name: Poser les fichiers de déploiement
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/{{ item }}"
+        dest: "{{ app_dir }}/{{ item }}"
+        mode: "0644"
+      loop: "{{ fichiers_deploiement }}"
+
+    - name: Garder l'image en service sous l'étiquette de retour arrière
+      ansible.builtin.shell: |
+        set -e
+        img=$({{ moteur }} inspect --format '{{ '{{' }}.Config.Image{{ '}}' }}' "{{ conteneur }}" 2>/dev/null || true)
+        if [ -n "$img" ]; then {{ moteur }} tag "$img" "${img%%:*}:avant-maj"; fi
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Démarrer ou mettre à jour
+      ansible.builtin.command:
+        cmd: "{{ commande_compose }} up -d"
+        chdir: "{{ app_dir }}"
+      changed_when: true
+
+    - name: Attendre que l'application réponde
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ port_local }}{{ chemin_sante }}"
+        status_code: 200
+      register: sante
+      retries: 10
+      delay: 3
+      until: sante.status == 200
+
+    - name: Poser le vhost nginx (option)
+      ansible.builtin.copy:
+        src: "{{ app_dir }}/{{NOM}}.conf"
+        dest: "{{ vhost_dir | default('/etc/nginx/conf.d') }}/{{DOMAINE}}.conf"
+        remote_src: true
+        mode: "0644"
+      when: deploy_vhost | bool
+
+    - name: Tester la configuration nginx
+      ansible.builtin.command: nginx -t
+      changed_when: false
+
+    - name: Rappel
+      ansible.builtin.debug:
+        msg: >-
+          Déploiement de {{ app_nom }} {{ app_version }} terminé. Lancer maintenant playbook_check.yaml, puis inscrire
+          l'application dans la supervision (sauvegarde, restauration, chef de projet), essayer une restauration et
+          mettre à jour le schéma d'infrastructure du serveur. Retour arrière : voir procedure-installation.md.

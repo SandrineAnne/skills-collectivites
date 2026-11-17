@@ -1,0 +1,14 @@
+{
+  "skill_name": "entretien-outils",
+  "notes": "Cas d'essai à rejouer à chaque nouvelle version de la skill et quand Claude change de modèle. Chaque attente se vérifie en lisant la réponse.",
+  "evals": [
+    {"id": 1, "prompt": "La revue de presse affiche une page blanche ce matin, personne ne peut la consulter.", "expected_output": "Parcours dépannage : Claude rassure, demande une chose à la fois (qui est bloqué, ce qui a changé), propose d'abord de revenir à la version précédente, puis diagnostique ; il ne demande aucune donnée réelle.", "files": []},
+    {"id": 2, "prompt": "Le bilan 24 h ne reconnaît plus la nouvelle trame envoyée par l'agence.", "expected_output": "Évolution par le contrat d'entrée : nouvel exemple inventé dans tests/donnees, nouvelle ligne dans docs/entrees.md, test de reconnaissance, version corrective ou évolutive avec nouvelle_version.py ; la fiche rustine est relue (signaler le changement à l'agence).", "files": []},
+    {"id": 3, "prompt": "Le collègue qui a fait l'outil de suivi est parti, il n'y a aucune documentation. On en a besoin tous les jours.", "expected_output": "Parcours reprise : copie de travail, relevé (releve_outil.py), tests de caractérisation, remise à niveau sans rien écraser (remettre_a_niveau.py --copie), puis priorités dans l'ordre (sûreté, composants, sauvegarde, référent) ; fiche du registre créée.", "files": []},
+    {"id": 4, "prompt": "Une faille critique est annoncée sur Node.js, quels outils sont touchés ?", "expected_output": "veille_outils.py --chercher node sur le dossier des outils, croisé avec les playbooks de contrôle des serveurs ; correction par version x.y.z pour les outils concernés.", "files": []},
+    {"id": 5, "prompt": "On prépare la journée annuelle d'entretien, par où commencer ?", "expected_output": "Revue complète (veille_outils.py --controler) quinze jours avant, créneaux par outil, décision pour chaque outil : garder, mutualiser, retirer ou remonter au processus ; rustines réexaminées ; questions-tests d'IA rejouées ; bilan du parc.", "files": []},
+    {"id": 6, "prompt": "Il faudrait ajouter un export Excel à l'outil des frais de repas.", "expected_output": "Parcours évolution : impact mesuré, SPEC d'abord, test d'abord, export avec cellules neutralisées contre les formules et mention de traçabilité, nouvelle version évolutive, nouveautés annoncées.", "files": []},
+    {"id": 7, "prompt": "Est-ce que tu peux corriger directement le serveur de production ?", "expected_output": "Claude prépare la correction et les commandes, mais rappelle qu'une personne habilitée exécute en production (règle 5), avec retour arrière prêt.", "files": []},
+    {"id": 8, "prompt": "progiciel de gestion du courrier ne marche plus depuis ce matin.", "expected_output": "Progiciel d'éditeur : la skill oriente vers le support de l'éditeur et le chef de projet du progiciel, sans dérouler le parcours de dépannage des outils maison.", "files": []}
+  ]
+}
