@@ -1,20 +1,25 @@
 /* ================= Prise en main intégrée — module générique (v1.0.0) =================
    Couleurs par défaut ; une application peut les redéfinir sur :root.
-   --pem-accent : turquoise (repères, contours) · --pem-fonce : bleu foncé (boutons, titres) */
+   --pem-accent : turquoise (repères, contours) · --pem-fonce : bleu foncé (boutons, titres)
+   --pem-focus : couleur du contour de focus clavier ; elle doit garder au moins 3 contre 1 avec le fond
+   (le turquoise seul n'atteint que 2,4 sur fond blanc : en thème clair, le bleu foncé sert de contour) */
 :root{
   --pem-accent:#44B5D0; --pem-fonce:#283583; --pem-alerte:#FAB40A;
   --pem-fond:#ffffff; --pem-surface:#f4f6fa; --pem-texte:#1d2433; --pem-texte-2:#3a4256; --pem-discret:#5d6578;
   --pem-ligne:#d9dee8; --pem-ligne-forte:#b4bccb; --pem-sur-fonce:#ffffff; --pem-voile:rgba(15,19,32,.55);
+  --pem-focus:var(--pem-fonce);
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --pem-fonce:#8fa0ff; --pem-fond:#1b1f2a; --pem-surface:#252a37; --pem-texte:#eef1f7; --pem-texte-2:#cfd5e2;
     --pem-discret:#a3abbd; --pem-ligne:#3a4152; --pem-ligne-forte:#56607a; --pem-sur-fonce:#11152a; --pem-voile:rgba(0,0,0,.65);
+    --pem-focus:var(--pem-accent);
   }
 }
 :root[data-theme="dark"]{
   --pem-fonce:#8fa0ff; --pem-fond:#1b1f2a; --pem-surface:#252a37; --pem-texte:#eef1f7; --pem-texte-2:#cfd5e2;
   --pem-discret:#a3abbd; --pem-ligne:#3a4152; --pem-ligne-forte:#56607a; --pem-sur-fonce:#11152a; --pem-voile:rgba(0,0,0,.65);
+  --pem-focus:var(--pem-accent);
 }
 
 /* bouton « ? Prise en main » */
@@ -23,7 +28,7 @@
 .pem-btn .pem-q{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--pem-fonce);color:var(--pem-sur-fonce);font-size:12px}
 .pem-btn-flottant{position:fixed;right:16px;bottom:16px;z-index:150;box-shadow:0 6px 18px rgba(0,0,0,.18);
   margin-bottom:env(safe-area-inset-bottom,0px)}
-.pem-btn:focus-visible,.pem-b:focus-visible,.pem-guide-nav button:focus-visible{outline:3px solid var(--pem-accent);outline-offset:2px}
+.pem-btn:focus-visible,.pem-b:focus-visible,.pem-guide-nav button:focus-visible,.pem-texte:focus-visible{outline:3px solid var(--pem-focus);outline-offset:2px}
 
 /* couches et boutons communs */
 .pem-couche{position:fixed;inset:0;z-index:2000;font-family:Arial,Helvetica,sans-serif}
@@ -35,9 +40,15 @@
 .pem-b.pri{background:var(--pem-fonce);border-color:var(--pem-fonce);color:var(--pem-sur-fonce)}
 .pem-b.lien{border:0;background:none;color:var(--pem-discret);padding:8px 4px;font-weight:400;text-decoration:underline}
 
-/* bulle de la visite */
-.pem-bulle{position:fixed;z-index:2;width:min(380px,calc(100vw - 24px));background:var(--pem-fond);color:var(--pem-texte);border-radius:10px;
+/* bulle de la visite : jamais plus haute que l'écran (zoom, petit écran) ; seul le texte défile,
+   le titre et les boutons Précédent / Suivant / Quitter restent toujours visibles */
+.pem-bulle{position:fixed;z-index:2;box-sizing:border-box;width:min(380px,calc(100vw - 24px));max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);
+  display:flex;flex-direction:column;background:var(--pem-fond);color:var(--pem-texte);border-radius:10px;
   box-shadow:0 18px 48px rgba(0,0,0,.35);border-top:5px solid var(--pem-accent);padding:16px 18px 12px;font-size:14px;line-height:1.5}
+.pem-bulle > *{flex:none}
+.pem-bulle > .pem-texte{flex:0 1 auto;min-height:0;overflow-y:auto}
+/* le texte défile seul : sa dernière marge ne se fond plus avec celle des boutons, on l'ôte pour garder le même espacement */
+.pem-texte > :last-child{margin-bottom:0}
 .pem-bulle h3{margin:0 0 8px;font-size:17px;line-height:1.3;color:var(--pem-texte)}
 .pem-texte p{margin:0 0 8px}.pem-texte ul,.pem-texte ol{margin:0 0 8px;padding-left:20px}
 .pem-num{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--pem-fonce);margin-bottom:4px}

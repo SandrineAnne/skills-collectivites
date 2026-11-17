@@ -56,9 +56,17 @@
   function fermerTout() { fermerVisite(true); fermerFenetre('pem-accueil'); fermerFenetre('pem-nouveautes'); fermerGuide(); }
 
   /* ---------- fenêtres simples (accueil, nouveautés) ---------- */
+  /* Contrôle où rendre le focus à la fermeture d'une fenêtre : celui qui l'a ouverte (s'il reste dans la page),
+     sinon le bouton permanent « ? Prise en main » (ouverture automatique au premier lancement). */
+  function ouvreur() {
+    const a = document.activeElement;
+    if (a && a !== document.body && a !== document.documentElement && a.isConnected && !a.closest('.pem-couche, #pem-guide')) return a;
+    return document.querySelector('[data-tuto="aide"]');
+  }
   function ouvrirFenetre(id, html, focusSel) {
+    const retour = ouvreur();
     fermerTout();
-    const L = el('div', 'pem-couche'); L.id = id;
+    const L = el('div', 'pem-couche'); L.id = id; L._retour = retour;
     L.appendChild(el('div', 'pem-voile'));
     const b = el('div', 'pem-fenetre', html);
     b.setAttribute('role', 'dialog'); b.setAttribute('aria-modal', 'true'); b.setAttribute('aria-labelledby', id + '-titre');
@@ -67,9 +75,13 @@
     const f = b.querySelector(focusSel); if (f) f.focus();
     return b;
   }
-  function fermerFenetre(id) {
+  function fermerFenetre(id, rendreFocus) {
     const L = document.getElementById(id); if (!L) return;
     L.remove(); document.removeEventListener('keydown', L._echap || (() => {}));
+    if (rendreFocus) {   // l'ouvreur a pu quitter la page entre-temps : on se rabat sur le bouton d'aide
+      const cible = L._retour && L._retour.isConnected ? L._retour : document.querySelector('[data-tuto="aide"]');
+      if (cible) cible.focus({ preventScroll: true });
+    }
   }
   function surEchap(id, fn) {
     const L = document.getElementById(id);
@@ -95,10 +107,10 @@
       (auto ? ' <button type="button" class="pem-b lien" id="pem-jamais">Ne plus proposer au démarrage</button>' : '') + '</p>',
       '#pem-go-visite');
     const vu = () => { lsSet(cleVu(), '1'); lsSet(cleVersion(), C.version); };
-    const fermer = () => fermerFenetre('pem-accueil');
+    const fermer = () => fermerFenetre('pem-accueil', true);
     surEchap('pem-accueil', fermer);
-    b.querySelector('#pem-go-visite').addEventListener('click', () => { vu(); fermer(); lancerVisite(); });
-    b.querySelector('#pem-go-guide').addEventListener('click', () => { vu(); fermer(); ouvrirGuide(0); });
+    b.querySelector('#pem-go-visite').addEventListener('click', () => { vu(); fermerFenetre('pem-accueil'); lancerVisite(); });
+    b.querySelector('#pem-go-guide').addEventListener('click', () => { vu(); fermerFenetre('pem-accueil'); ouvrirGuide(0); });
     b.querySelector('#pem-plus-tard').addEventListener('click', fermer);
     const j = b.querySelector('#pem-jamais'); if (j) j.addEventListener('click', () => { vu(); fermer(); });
   }
@@ -112,10 +124,10 @@
       '<h2 id="pem-nouveautes-titre">Nouveautés de la version ' + mineure(C.version) + '</h2>' + html +
       '<div class="pem-actions"><button type="button" class="pem-b pri" id="pem-ok">J’ai compris</button>' +
       '<button type="button" class="pem-b" id="pem-nv-guide">Ouvrir le guide</button></div>', '#pem-ok');
-    const fermer = () => fermerFenetre('pem-nouveautes');
+    const fermer = () => fermerFenetre('pem-nouveautes', true);
     surEchap('pem-nouveautes', fermer);
     b.querySelector('#pem-ok').addEventListener('click', fermer);
-    b.querySelector('#pem-nv-guide').addEventListener('click', () => { fermer(); ouvrirGuide(0); });
+    b.querySelector('#pem-nv-guide').addEventListener('click', () => { fermerFenetre('pem-nouveautes'); ouvrirGuide(0); });
     return true;
   }
 
@@ -204,6 +216,15 @@
     else { x = (vw - w) / 2; y = vh - h - m; }
     x = Math.min(Math.max(m, x), vw - w - m); y = Math.min(Math.max(m, y), vh - h - m);
     bulle.style.left = x + 'px'; bulle.style.top = y + 'px';
+    /* texte plus haut que la bulle : il défile, et on peut le faire défiler au clavier (zone atteignable par Tab) */
+    const texte = bulle.querySelector('.pem-texte');
+    if (texte) {
+      const defile = texte.scrollHeight > texte.clientHeight + 1;
+      if (defile !== texte.hasAttribute('tabindex')) {
+        if (defile) { texte.tabIndex = 0; texte.setAttribute('role', 'region'); texte.setAttribute('aria-labelledby', 'pem-titre-etape'); }
+        else { texte.removeAttribute('tabindex'); texte.removeAttribute('role'); texte.removeAttribute('aria-labelledby'); }
+      }
+    }
   }
   function fermerVisite(silencieux) {
     if (!T.couche) return;
