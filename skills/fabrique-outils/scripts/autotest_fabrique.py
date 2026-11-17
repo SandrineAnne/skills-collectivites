@@ -324,6 +324,8 @@ def essais_socle(banc: Banc) -> None:
     banc.refuse('une règle jamais citée dans le code est refusée', remplacer('src/coeur/regles.py', '# RG-02', '# autre règle'), 'jamais citées')
     banc.refuse('une SPEC non validée est refusée', substituer('SPEC.md', r'(?m)^Statut : .*$', 'Statut : brouillon'), 'statut')
     banc.refuse('un composant dont le support est terminé est refusé', remplacer('docs/composants.md', '2027-06', '2026-06'), 'support terminé')
+    banc.refuse('un composant noté « plus maintenu » est refusé, même avec une source',
+                remplacer('docs/composants.md', '2027-06', 'plus maintenu'), 'support terminé')
     banc.refuse('une image du compose absente de composants.md est refusée', remplacer('docs/composants.md', 'nginx', 'serveur'), 'n\'est pas listée')
     banc.refuse('une ouverture externe sans décision écrite (pas de deny all) est refusée', remplacer(vhost, 'deny all;', ''), 'deny all')
     banc.accepte('un essai de restauration daté est reconnu',
