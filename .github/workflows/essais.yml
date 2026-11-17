@@ -1,0 +1,28 @@
+name: Essais
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  essais:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Autotest de la fabrique
+        run: python skills/fabrique-outils/scripts/autotest_fabrique.py
+      - name: Banc de cas piégés
+        run: python skills/fabrique-outils/scripts/autotest_surete.py
+      - name: Autotest de l'entretien
+        run: python skills/entretien-outils/scripts/autotest_entretien.py
