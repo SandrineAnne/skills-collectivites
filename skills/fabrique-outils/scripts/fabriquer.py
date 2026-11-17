@@ -1517,7 +1517,7 @@ def ecrire_dossier(ctx: Contexte, paquet: Chemin | None) -> None:
               f'- Niveau : {ctx.niveau} · format {ctx.format} · contrôlé le {ctx.aujourdhui.isoformat()}',
               f'- À quoi il sert : {a_quoi_ca_sert(ctx) or "non renseigné"}',
               f'- Réutilisable par d\'autres : {champ("Potentiel de réutilisation")} · cellule informée : {champ("Cellule opérationnelle informée")}',
-              f'- Installation souhaitée : {champ("Demande d\'installation")}',
+              '- Installation souhaitée : ' + champ("Demande d'installation"),
               f'- Exceptions ouvertes : {", ".join(exceptions) or "aucune"}',
               f'- Paquet : {paquet.name if paquet else "non fabriqué"}', '']
     rubriques = (('En ordre', bilan.ok), ('À corriger avant de transmettre', bilan.erreurs),
