@@ -11,6 +11,17 @@ Cette skill encadre la fabrication des petits outils d'une collectivité : rempl
 
 Ce qui dépend de l'organisation (rôles, serveurs, postes, outils d'exploitation) est dans `references/environnement-collectivite.md`, **à lire avant l'étape 0**. « La cellule » désigne l'équipe qui valide (la cellule opérationnelle, ou son équivalent). Le besoin a été questionné à l'oral avec son émetteur, l'entretien enregistré et transcrit, et la transcription Markdown, anonymisée, est déposée dans le dossier de travail. La sécurité est évaluée avec la grille de vigilance des outils IA, tenue par la cybersécurité.
 
+## Tant que la skill n'est pas adaptée : mode essai
+
+Si `references/environnement-collectivite.md` contient encore des « [À ADAPTER] », ou `references/grille-vigilance.md` des « [À REMPLIR] », la skill s'essaie mais n'est pas encore celle de la collectivité. Dans ce cas :
+
+- Le dire une fois, au début, en une phrase simple : « Cette skill n'a pas encore été adaptée à votre collectivité : je continue avec des valeurs d'exemple, pour un essai. » Ne pas le répéter ensuite.
+- Pour l'environnement, prendre les exemples entre parenthèses comme hypothèses et les noter dans la SPEC (« À faire préciser »).
+- **N'annoncer aucun niveau vert, orange ou rouge, n'écrire aucun score.** À la place, dans la SPEC et dans `docs/grille-vigilance.md`, lister les sujets de la grille que l'outil touche (liste indicative du modèle), avec la mention « à soumettre à la cybersécurité ».
+- La méthode, le socle de sûreté et les douze règles s'appliquent sans changement. La mise en service pour d'autres attend que la grille soit remplie : sans niveau, personne ne peut la valider.
+
+Pour sortir du mode essai : le guide `docs/adapter-a-votre-collectivite.md` du dépôt, une demi-journée avec la DSI.
+
 ## Règle d'or : libérer la création, cadrer sans freiner
 
 Avec Claude, fabriquer un outil prend des heures, plus des mois : c'est une chance à saisir, pas un risque à contenir. Cette skill doit **toujours** permettre aux agents de créer. Chaque règle passe donc un test : *ralentit-elle l'agent qui crée ?* Si oui, soit Claude l'applique lui-même sans rien lui demander, soit elle n'est exigée qu'au moment où la cellule installe l'outil pour d'autres, jamais pendant la création. Seul le socle de sûreté (secrets, données de personnes, appels externes, code dangereux) s'applique dès le premier jour, parce qu'il protège l'agent lui-même. Il n'est jamais allégé : ni pour un brouillon, ni pour un outil partagé, ni pour aller plus vite.
