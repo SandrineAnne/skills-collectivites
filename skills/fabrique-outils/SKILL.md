@@ -50,7 +50,7 @@ La skill vise un outil avec une interface et des utilisateurs. Pour le reste, le
 | Demande | Que faire |
 |---|---|
 | Script d'exploitation ou d'administration (PowerShell, bash, Ansible) | `references/scripts-exploitation.md` (simulation, sauvegarde, retour arrière, garde-fou sur la cible) ; règles 1, 7, 8 ; grille si données personnelles ou annuaire |
-| Assistant documentaire, chatbot, prompt système | Skill `atelier-prompt` ; passer la grille (données personnelles et sensibles, envoi à une IA externe, décisions concernant des personnes) |
+| Assistant documentaire, chatbot, prompt système | La skill de rédaction de prompts de votre collectivité, si elle existe ; passer la grille (données personnelles et sensibles, envoi à une IA externe, décisions concernant des personnes) |
 | Macro Office (VBA, Office Scripts) | Passer la grille ; la cellule tranche entre refonte en format A ou C et maintien |
 | Paramétrage d'un progiciel éditeur (gestion du courrier, gestion du patrimoine, outil de tickets…) | Seulement aider à rédiger la SPEC du besoin |
 | Document, note, courrier, présentation | Les skills de modèles de votre collectivité, si elles existent |
@@ -73,11 +73,11 @@ La skill vise un outil avec une interface et des utilisateurs. Pour le reste, le
 
 | Niveau | Démarche |
 |---|---|
-| Vert (0 à 10 pts, aucun bloquant) | SPEC courte ; jalons 1 et 2 fusionnables ; mise en service validée par la cellule |
-| Orange (11 à 24 pts, aucun bloquant) | Les 3 jalons ; plan d'actions daté dans la SPEC ; avis de la cybersécurité, et du DPO si données personnelles, avant la mise en service |
-| Rouge (25 pts ou plus, ou un bloquant) | Ne pas coder tel quel : proposer une conception qui lève les points bloquants (presque toujours possible à ce stade), puis réévaluer |
+| Vert (seuil de votre grille, aucun bloquant) | SPEC courte ; jalons 1 et 2 fusionnables ; mise en service validée par la cellule |
+| Orange (seuil de votre grille, aucun bloquant) | Les 3 jalons ; plan d'actions daté dans la SPEC ; avis de la cybersécurité, et du DPO si données personnelles, avant la mise en service |
+| Rouge (seuil de votre grille, ou un bloquant) | Ne pas coder tel quel : proposer une conception qui lève les points bloquants (presque toujours possible à ce stade), puis réévaluer |
 
-La grille intégrée (`references/grille-vigilance.md`, version du 24/09/2026) est celle de la cybersécurité ; en cas d'écart avec sa skill, la sienne prime (`scripts/verifier_grille.py`). Score vert mais données sensibles : le signaler à la cellule. Si l'agent veut aller plus vite (« vas-y »), respecter son choix sauf face à un point bloquant, et noter ce qui n'a pas été validé dans `docs/derogations.md`.
+La grille intégrée (`references/grille-vigilance.md`) est un modèle à remplir avec votre cybersécurité ; une fois remplie, en cas d'écart avec sa skill, la sienne prime (`scripts/verifier_grille.py`). Score vert mais données sensibles : le signaler à la cellule. Si l'agent veut aller plus vite (« vas-y »), respecter son choix sauf face à un point bloquant, et noter ce qui n'a pas été validé dans `docs/derogations.md`.
 
 ### Étape 0 — Lire le besoin
 
@@ -137,19 +137,19 @@ Le format A échappe à plusieurs points de la grille (pas de stockage serveur, 
 
 ## Douze règles non négociables
 
-Détail dans `references/socle-technique.md` ; entre parenthèses, les points de la grille évités.
+Détail dans `references/socle-technique.md` ; entre parenthèses, les sujets de la grille évités.
 
-1. Aucun secret dans le code ni dans le compose : `.env` sur le serveur, `.env.exemple` factice livré (11).
-2. Aucune donnée envoyée à une IA externe, Cowork compris : développer sur des données fictives ou anonymisées ; jamais d'appel à l'API Anthropic (8).
-3. L'outil aide, l'humain décide : aucun classement, score ou tri de personnes sans avis préalable du DPO ; tout résultat est une proposition à vérifier (9, 10).
-4. Interne par défaut : joignable seulement depuis le réseau interne, derrière le frontal HTTPS, jamais en direct ; toute ouverture à l'extérieur est une décision écrite (3).
-5. Comptes nominatifs dès qu'il y a des données partagées ; jamais de compte générique sans exception notée ; mots de passe hachés (13, 14). Mode d'authentification standard : en attente.
-6. Journal « qui, quoi, quand » pour toute donnée partagée (15).
-7. Composants figés et vérifiés : versions précises, analyse des vulnérabilités à chaque version (12). Tests exécutés et réussis avant toute livraison.
-8. Un référent et un suppléant par fonction, procédure de mise à jour écrite, code déposé chez la DSI à chaque version (16, 17).
+1. Aucun secret dans le code ni dans le compose : `.env` sur le serveur, `.env.exemple` factice livré (secrets en dur).
+2. Aucune donnée envoyée à une IA externe, Cowork compris : développer sur des données fictives ou anonymisées ; jamais d'appel à l'API Anthropic (IA externe).
+3. L'outil aide, l'humain décide : aucun classement, score ou tri de personnes sans avis préalable du DPO ; tout résultat est une proposition à vérifier (décision par l'IA, sans vérification humaine).
+4. Interne par défaut : joignable seulement depuis le réseau interne, derrière le frontal HTTPS, jamais en direct ; toute ouverture à l'extérieur est une décision écrite (accès depuis Internet).
+5. Comptes nominatifs dès qu'il y a des données partagées ; jamais de compte générique sans exception notée ; mots de passe hachés (authentification, mots de passe et comptes partagés). Mode d'authentification standard : en attente.
+6. Journal « qui, quoi, quand » pour toute donnée partagée (traçabilité).
+7. Composants figés et vérifiés : versions précises, analyse des vulnérabilités à chaque version (code ni relu ni analysé). Tests exécutés et réussis avant toute livraison.
+8. Un référent et un suppléant par fonction, procédure de mise à jour écrite, code déposé chez la DSI à chaque version (une seule personne, documentation et code non remis).
 9. **Composants maintenus :** chaque composant est listé avec sa date de fin de support ; un composant sans support n'est pas livré (hors grille).
 10. **Tout fichier reçu est suspect :** taille et type contrôlés, XML sans entités externes, exports tableur neutralisés contre les formules, rien d'importé inséré tel quel dans une page.
-11. **Appels réseau déclarés :** aucun appel sortant hors `reseau-autorise.txt`, avec la raison de chaque hôte (8).
+11. **Appels réseau déclarés :** aucun appel sortant hors `reseau-autorise.txt`, avec la raison de chaque hôte (IA externe).
 12. **Une exception se note :** `docs/derogations.md` (règle, raison, décideur par fonction, date de revue, avis demandé). Un ajout hors SPEC se note dans `docs/perimetre.md`.
 
 Deux habitudes : travailler sur une **copie** des fichiers fournis, jamais sur l'original ; chaque bouton qui copie ou télécharge **confirme visiblement** ce qui s'est passé.
