@@ -150,23 +150,23 @@ Principes, valables quel que soit le serveur ; les valeurs concrètes de votre c
 
 ## 8. Correspondance avec la grille de vigilance
 
-Grille de la cybersécurité, version du 24/09/2026 (texte complet : `grille-vigilance.md`). En cas d'écart, la version de la cybersécurité fait foi.
+Sujets que couvre généralement une grille de vigilance (modèle à remplir : `grille-vigilance.md`). En cas d'écart, la version de votre cybersécurité fait foi.
 
-| Point de la grille | Réponse de conception |
+| Sujet de la grille | Réponse de conception |
 |---|---|
-| 1 Stockage de données | Format A sans stockage serveur quand c'est possible ; sinon serveur de la collectivité uniquement, sauvegardé, restauration essayée |
-| 2 Connexion à un logiciel métier, l'AD, la messagerie | Seulement si la SPEC le justifie ; compte de service aux droits minimaux, lecture seule si possible |
-| 3 Accès depuis Internet | Réseau interne par défaut ; ouverture déclarée et validée selon `ouverture-externe.md` |
-| 4 Hors du SI | Jamais pour l'outil en service ; diffusion publique = version dédiée sans données |
-| 5, 6 Données personnelles, sensibles | Minimisation ; données fictives en développement |
-| 7 Sans avis du DPO | Avis demandé dès la SPEC, avant toute donnée réelle |
-| 8 IA externe | Aucune ; IA locale optionnelle avec mode sans IA ; appels sortants limités à `reseau-autorise.txt` |
-| 9, 10 Décision par l'IA, sans vérification humaine | L'outil propose, l'agent décide ; pas de tri de personnes sans avis du DPO |
-| 11 Secrets en dur | `.env`, `.env.exemple`, contrôle intégré et `gitleaks` |
-| 12 Code ni relu ni analysé | `fabriquer.py`, analyses automatiques et relecture ciblée |
-| 13 Pas d'authentification | Comptes nominatifs dès qu'il y a des données partagées |
-| 14 Mots de passe faibles, comptes partagés | Hachage argon2 ou bcrypt, aucun compte générique (sinon exception notée) |
-| 15 Pas de traçabilité | Journal qui / quoi / quand |
-| 16 Une seule personne | Référent et suppléant, procédure de mise à jour |
-| 17 Pas de documentation, code non remis | Documentation versionnée, dépôt chez la DSI à chaque version |
+| Stockage de données | Format A sans stockage serveur quand c'est possible ; sinon serveur de la collectivité uniquement, sauvegardé, restauration essayée |
+| Connexion à un logiciel métier, l'AD, la messagerie | Seulement si la SPEC le justifie ; compte de service aux droits minimaux, lecture seule si possible |
+| Accès depuis Internet | Réseau interne par défaut ; ouverture déclarée et validée selon `ouverture-externe.md` |
+| Hors du SI | Jamais pour l'outil en service ; diffusion publique = version dédiée sans données |
+| Données personnelles, sensibles | Minimisation ; données fictives en développement |
+| Sans avis du DPO | Avis demandé dès la SPEC, avant toute donnée réelle |
+| IA externe | Aucune ; IA locale optionnelle avec mode sans IA ; appels sortants limités à `reseau-autorise.txt` |
+| Décision par l'IA, sans vérification humaine | L'outil propose, l'agent décide ; pas de tri de personnes sans avis du DPO |
+| Secrets en dur | `.env`, `.env.exemple`, contrôle intégré et `gitleaks` |
+| Code ni relu ni analysé | `fabriquer.py`, analyses automatiques et relecture ciblée |
+| Pas d'authentification | Comptes nominatifs dès qu'il y a des données partagées |
+| Mots de passe faibles, comptes partagés | Hachage argon2 ou bcrypt, aucun compte générique (sinon exception notée) |
+| Pas de traçabilité | Journal qui / quoi / quand |
+| Une seule personne | Référent et suppléant, procédure de mise à jour |
+| Pas de documentation, code non remis | Documentation versionnée, dépôt chez la DSI à chaque version |
 | *(hors grille)* Composants non maintenus | Règle propre à la skill : `docs/composants.md` avec dates de fin de support, contrôlé par `fabriquer.py` |

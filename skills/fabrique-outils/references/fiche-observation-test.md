@@ -1,12 +1,12 @@
 # Fiche d'observation — test de la skill
 
-À utiliser quand la cellule teste la skill sur un besoin réel. Elle sert à la faire évoluer (v0.7), pas à évaluer les personnes. Claude la tient à jour pendant le test et la remet à la fin ; la cellule corrige et complète.
+À utiliser quand la cellule teste la skill sur un besoin réel. Elle sert à la faire évoluer, pas à évaluer les personnes. Claude la tient à jour pendant le test et la remet à la fin ; la cellule corrige et complète.
 
 ## Avant le test (cellule)
 
 - Besoin choisi (en une phrase) et format attendu (A, B, C, D) :
 - Transcription disponible et anonymisée : oui / non
-- Grille de la cybersécurité : intégrée à la skill (version du 24/09/2026)
+- Grille de la cybersécurité : intégrée à la skill (version du JJ/MM/AAAA)
 - Résultat attendu à la fin du test (SPEC seule, prototype, outil livré) :
 
 ## À chaque jalon (Claude remplit, la cellule corrige)
