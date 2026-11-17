@@ -2,7 +2,7 @@
 name: entretien-outils
 description: "Entretien des outils maison d'une collectivité, déjà en service, fabriqués avec Claude ou non : dépannage, évolution, reprise d'un outil sans documentation, veille sur les composants. DÉCLENCHER quand un outil existant ne marche plus ou mal (erreur, page blanche, chiffres faux, ne démarre plus, lenteur, après une mise à jour), quand on veut le faire évoluer, quand il faut reprendre un outil dont l'auteur est parti ou qui n'a pas de dossier, quand une faille ou une fin de support touche ses composants, ou pour une revue régulière des outils. NE PAS DÉCLENCHER pour créer un nouvel outil (skill fabrique-outils), pour un progiciel d'éditeur (progiciel de gestion du courrier, progiciel de gestion du patrimoine, outil de tickets… : support de l'éditeur) ni pour un fichier jetable. Impose : remettre en marche avant de comprendre, ne jamais travailler sur l'original, un défaut corrigé = un test ajouté, le dossier de l'outil fait foi, Claude prépare et un humain habilité exécute en production."
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # Entretien des outils maison

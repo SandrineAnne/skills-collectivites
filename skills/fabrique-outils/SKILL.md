@@ -2,7 +2,7 @@
 name: fabrique-outils
 description: "Méthode et socle qualité pour fabriquer dans une collectivité un outil durable avec Claude Cowork : HTML partagé, application web conteneurisée, MSI ou Grist. DÉCLENCHER quand l'outil servira à d'autres que son auteur ou dans la durée, traite des données de personnes, s'installe sur un serveur ou un poste, remplace un outil existant, ou est montré régulièrement aux élus ou à l'extérieur ; aussi pour faire évoluer ou reprendre un tel outil, ou sur transcription d'un besoin. NE PAS DÉCLENCHER pour un fichier HTML jetable, pour soi ou une réunion (calculette, graphique de diaporama, mini-tableau de bord ponctuel, sans donnée de personne). Dans le doute, déclencher et poser la question du curseur. Impose : questions en mots simples, SPEC validée avant de coder, jalons selon la grille de vigilance IA, sécurité et RGPD dès la conception, tutoriel, paquet contrôlé pour la DSI, partage et transmission. Ne couvre pas : assistants documentaires, macros, documents, scripts d'exploitation (fiche dédiée)."
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # Fabrique d'outils et d'applications
@@ -149,7 +149,7 @@ Détail dans `references/socle-technique.md` ; entre parenthèses, les sujets de
 8. Un référent et un suppléant par fonction, procédure de mise à jour écrite, code déposé chez la DSI à chaque version (une seule personne, documentation et code non remis).
 9. **Composants maintenus :** chaque composant est listé avec sa date de fin de support ; un composant sans support n'est pas livré (hors grille).
 10. **Tout fichier reçu est suspect :** taille et type contrôlés, XML sans entités externes, exports tableur neutralisés contre les formules, rien d'importé inséré tel quel dans une page.
-11. **Appels réseau déclarés :** aucun appel sortant hors `reseau-autorise.txt`, avec la raison de chaque hôte (IA externe).
+11. **Appels réseau déclarés :** toute adresse écrite dans le code figure dans `reseau-autorise.txt` avec sa raison, aucune n'est construite à l'exécution ; en format A, chaque page porte la balise de sécurité (CSP) que `fabriquer.py` indique : c'est le navigateur qui bloque le reste (IA externe).
 12. **Une exception se note :** `docs/derogations.md` (règle, raison, décideur par fonction, date de revue, avis demandé). Un ajout hors SPEC se note dans `docs/perimetre.md`.
 
 Deux habitudes : travailler sur une **copie** des fichiers fournis, jamais sur l'original ; chaque bouton qui copie ou télécharge **confirme visiblement** ce qui s'est passé.

@@ -13,6 +13,8 @@ Un outil vieillit même quand personne n'y touche : ses composants perdent leur 
 
 La revue signale aussi : un outil **sans classe**, un outil de **classe 1** resté au niveau partagé, sans mode dégradé ou sans suppléant, et un dossier dont le **contrôle embarqué est ancien** (à mettre à jour avec `remettre_a_niveau.py --mettre-a-jour-fabriquer` pour qu'il profite des dernières règles de sûreté).
 
+**Après un correctif du contrôle** (une nouvelle version de `fabriquer.py`), remettre chaque dossier à niveau (`remettre_a_niveau.py --mettre-a-jour-fabriquer`) et le repasser au contrôle : un outil accepté par l'ancien contrôle peut être refusé par le nouveau, et c'est justement ce qu'on cherche.
+
 ## La revue trimestrielle
 
 `python3 scripts/veille_outils.py <dossier contenant les outils> [--controler] [--sortie revue.md]`

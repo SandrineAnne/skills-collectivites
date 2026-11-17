@@ -29,7 +29,8 @@ Ce que le script contrôle :
      d'IA, mention de traçabilité sur les documents produits. Ce sont des exigences de complétude ou des alertes :
      elles ne bloquent jamais un brouillon ni un outil partagé.
 
-Marqueurs reconnus dans le code : « nosecret » (exemple fictif de secret) et « nosec » (motif dangereux justifié),
+Marqueurs reconnus dans le code : « nosecret : raison » (exemple fictif de secret) et « nosec : raison » (motif dangereux justifié) ;
+sans raison écrite, le marqueur ne compte pas, et chaque exemption est recopiée dans le bilan,
 toujours suivis de la raison sur la même ligne.
 """
 from __future__ import annotations
@@ -62,15 +63,14 @@ Chemin = pathlib.Path
 MARQUEUR = 'À COMPLÉTER'
 RE_MARQUEUR = re.compile(r'À[ _-]?COMPLÉTER')
 RE_PLUS_MAINTENU = re.compile(r'(?i)\b(?:plus|non|pas)\s+maintenu')   # « plus maintenu », « non maintenu depuis 2023 »
-EXTENSIONS_TEXTE = {'.py', '.js', '.mjs', '.cjs', '.ts', '.html', '.htm', '.css', '.md', '.txt', '.json', '.yaml', '.yml',
-                    '.ini', '.conf', '.sh', '.ps1', '.cfg', '.toml', '.xml', '.csv', '.exemple', '.env', '.vue', ''}
-DOSSIERS_IGNORES = {'.git', 'node_modules', 'dist', '__pycache__', 'data', '.venv', 'venv', 'vendor', '.pytest_cache',
-                    '.ruff_cache'}
+TAILLE_MAX_TEXTE = 25_000_000     # au-delà, un fichier texte n'est pas lu : il est signalé au bilan
+# Dossiers jamais lus parce qu'ils ne partent jamais dans le paquet (voir EXCLUS_PAQUET). Tout le reste est lu.
+DOSSIERS_IGNORES = {'.git', 'node_modules', 'dist', '__pycache__', 'data', '.venv', 'venv', '.pytest_cache', '.ruff_cache'}
 DOSSIERS_HORS_CODE = {'docs', 'tests', 'build'}          # ni motifs dangereux ni analyse de style
 EXCLUS_PAQUET = ['.env', '.env.*', '*.env', 'dist', '__pycache__', '*.pyc', 'data', 'node_modules', '.git', '.DS_Store',
-                 'donnees-reelles', '*.sqlite', '*.db', '.pytest_cache', '.ruff_cache']
+                 'donnees-reelles', '*.sqlite', '*.db', '.pytest_cache', '.ruff_cache', '.venv', 'venv']
 FICHIERS_ENV_AUTORISES = {'.env.exemple', '.env.example'}
-LIGNE_MINIFIEE = 2000            # au-delà, la ligne est une bibliothèque embarquée : elle relève de composants.md
+LIGNE_MINIFIEE = 2000            # au-delà, la ligne est sans doute une bibliothèque embarquée : ce qu'on y trouve donne une alerte, jamais un silence
 FONCTION_LONGUE = 80
 MODULE_PRISE_EN_MAIN = {'prise-en-main.js'}
 OBLIGATOIRES = ['README.md', 'SPEC.md', 'CHANGELOG.md', 'VERSION', '.gitignore', 'reseau-autorise.txt',
@@ -80,7 +80,7 @@ OBLIGATOIRES_B = ['deploy/.env.exemple', 'deploy/procedure-installation.md']
 # Niveau « partagé » : un HTML utilisé par quelques collègues. Socle minimal pour tous, le reste vient avec le niveau durable.
 OBLIGATOIRES_PARTAGE = ['README.md', 'SPEC.md', 'CHANGELOG.md', 'VERSION', '.gitignore', 'reseau-autorise.txt', 'docs/partage.md']
 NIVEAU_PARTAGE = 'partagé'
-VERSION_CONTROLE = '1.1'   # version de ce contrôle : la revue des outils repère les dossiers qui en embarquent une ancienne
+VERSION_CONTROLE = '1.2'   # version de ce contrôle : la revue des outils repère les dossiers qui en embarquent une ancienne
 FICHIERS_DE_SURETE = {'README.md', 'VERSION', '.gitignore', 'reseau-autorise.txt'}   # sans eux, les contrôles de sûreté ne peuvent pas tourner
 NIVEAU_DURABLE = 'durable'
 
@@ -93,6 +93,7 @@ class Bilan:
     alertes: list[str] = dataclasses.field(default_factory=list)
     ok: list[str] = dataclasses.field(default_factory=list)
     non_testes: list[str] = dataclasses.field(default_factory=list)
+    exemptions: list[str] = dataclasses.field(default_factory=list)   # lignes exemptées avec leur raison : à relire par la cellule
 
     def erreur(self, message: str) -> None:
         self.erreurs.append(message)
@@ -123,15 +124,40 @@ class Contexte:
     version: str | None = None
     images: list[str] = dataclasses.field(default_factory=list)
     _textes: dict[Chemin, str | None] = dataclasses.field(default_factory=dict)
+    _est_texte: dict[Chemin, bool] = dataclasses.field(default_factory=dict)
+    _hotes: set[str] | None = None
+    lignes_longues: dict[str, set[str]] = dataclasses.field(default_factory=dict)
 
     def texte(self, chemin: Chemin) -> str | None:
-        """Contenu d'un fichier texte, lu une seule fois ; None s'il est absent ou illisible."""
+        """Contenu d'un fichier texte, lu une seule fois ; None s'il est absent.
+
+        Un fichier qui n'est pas en UTF-8 est lu quand même (UTF-16, puis Latin-1) : un autre encodage ne fait pas échapper au contrôle.
+        """
         if chemin not in self._textes:
             try:
-                self._textes[chemin] = chemin.read_text(encoding='utf-8')
-            except (UnicodeDecodeError, OSError):
+                brut = chemin.read_bytes()
+            except OSError:
                 self._textes[chemin] = None
+                return None
+            if brut[:2] in (b'\xff\xfe', b'\xfe\xff'):
+                self._textes[chemin] = brut.decode('utf-16', errors='replace')
+            else:
+                try:
+                    self._textes[chemin] = brut.decode('utf-8')
+                except UnicodeDecodeError:
+                    self._textes[chemin] = brut.decode('latin-1')
         return self._textes[chemin]
+
+    def est_texte(self, chemin: Chemin) -> bool:
+        """Vrai si le fichier se lit comme du texte, quelle que soit son extension : c'est le contenu qui décide."""
+        if chemin not in self._est_texte:
+            try:
+                with chemin.open('rb') as flux:
+                    debut = flux.read(8192)
+            except OSError:
+                debut = b'\x00'
+            self._est_texte[chemin] = debut[:2] in (b'\xff\xfe', b'\xfe\xff') or b'\x00' not in debut
+        return self._est_texte[chemin]
 
     def oublier(self, chemin: Chemin) -> None:
         self._textes.pop(chemin, None)
@@ -140,7 +166,7 @@ class Contexte:
         return chemin.relative_to(self.racine).as_posix()
 
     def fichiers(self, sous_dossier: str | None = None, extensions: set[str] | None = None) -> list[Chemin]:
-        """Fichiers texte du projet, hors dossiers ignorés, hors gros fichiers et hors le script de contrôle lui-même."""
+        """Fichiers texte du projet, reconnus à leur contenu : hors dossiers jamais livrés et hors le script de contrôle lui-même."""
         base = self.racine / sous_dossier if sous_dossier else self.racine
         if not base.exists():
             return []
@@ -151,17 +177,20 @@ class Contexte:
     def _retenu(self, p: Chemin, extensions: set[str] | None) -> bool:
         if not p.is_file() or any(part in DOSSIERS_IGNORES for part in p.relative_to(self.racine).parts):
             return False
-        if p.stat().st_size > 5_000_000 or (p.name == 'fabriquer.py' and p.parent.name == 'build'):
+        if p.is_symlink() or p.stat().st_size > TAILLE_MAX_TEXTE or p == self.racine / 'build' / 'fabriquer.py':
             return False
-        suffixe = p.suffix.lower()
-        if extensions is not None and suffixe not in extensions:
+        if extensions is not None and p.suffix.lower() not in extensions:
             return False
-        return suffixe in EXTENSIONS_TEXTE or p.name.startswith('.env')
+        return self.est_texte(p)
 
     def fichiers_code(self, extensions: set[str]) -> list[Chemin]:
         """Le code de l'outil : tout sauf la documentation, les tests et le dossier build/."""
         return [p for p in self.fichiers(extensions=extensions)
                 if p.relative_to(self.racine).parts[0] not in DOSSIERS_HORS_CODE]
+
+    def fichiers_executables(self, extensions: set[str]) -> list[Chemin]:
+        """Tout fichier de code du projet, documentation et tests compris : un tutoriel s'ouvre, un test se lance."""
+        return self.fichiers(extensions=extensions)
 
     @property
     def souple(self) -> bool:
@@ -481,10 +510,17 @@ def controle_tests(ctx: Contexte) -> None:
 
 # ================================================================ 5. code : syntaxe, motifs dangereux, erreurs avalées
 MOTIFS_PYTHON = [
-    (re.compile(r'(?<![\w.])(?:eval|exec)\('), 'eval() ou exec() : exécution de code à partir d\'un texte', True),
+    (re.compile(r'(?<![\w.])(?:eval|exec)\(|\bbuiltins\.(?:eval|exec)\('), 'eval() ou exec() : exécution de code à partir d\'un texte', True),
     (re.compile(r'shell\s*=\s*True'), 'shell=True : commande système construite (risque d\'injection)', True),
     (re.compile(r'\bos\.(?:system|popen)\('), 'os.system() ou os.popen() : préférer subprocess avec une liste d\'arguments', True),
-    (re.compile(r'\bpickle\.loads?\('), 'pickle : ne jamais relire un fichier reçu avec pickle', True),
+    (re.compile(r'\b(?:pickle|cPickle|dill|jsonpickle|marshal|shelve)\.(?:loads?|decode|open)\('),
+     'pickle, marshal ou shelve : ne jamais relire un fichier reçu avec ces modules', True),
+    (re.compile(r'\bssl\._create_unverified_context\b|\bCERT_NONE\b'), 'vérification du certificat désactivée', True),
+    (re.compile(r'\b__import__\('), '__import__() : import construit à l\'exécution, à remplacer par un import normal', False),
+    (re.compile(r'\.extractall\('), 'extractall() : une archive reçue peut écrire hors du dossier prévu ; vérifier chaque chemin avant d\'extraire', False),
+    (re.compile(r'\brender_template_string\('), 'render_template_string() : ne jamais y passer un texte saisi ou importé', False),
+    (re.compile(r'host\s*=\s*["\']0\.0\.0\.0["\']'), 'écoute sur 0.0.0.0 : l\'outil doit n\'écouter qu\'en local, derrière le frontal', False),
+    (re.compile(r'Access-Control-Allow-Origin["\']?\s*[,:=]\s*["\']\*'), 'Access-Control-Allow-Origin « * » : toute page web pourrait appeler l\'outil', False),
     (re.compile(r'\byaml\.load\((?!.*Safe)'), 'yaml.load sans SafeLoader : utiliser yaml.safe_load', True),
     (re.compile(r'verify\s*=\s*False'), 'verify=False : vérification du certificat désactivée', True),
     (re.compile(r'\.execute(?:many)?\(\s*f["\']|\.execute(?:many)?\([^)\n]*["\']\s+(?:%|\+)\s*\w'),
@@ -495,15 +531,34 @@ MOTIFS_PYTHON = [
     (re.compile(r'\bhashlib\.(?:md5|sha1)\('), 'md5 ou sha1 : à ne pas utiliser pour la sécurité', False),
 ]
 MOTIFS_WEB = [
-    (re.compile(r'(?<![\w.])eval\('), 'eval() : exécution de code à partir d\'un texte', True),
-    (re.compile(r'\bnew\s+Function\('), 'new Function() : exécution de code à partir d\'un texte', True),
+    (re.compile(r'(?<![\w.])eval\(|\b(?:window|globalThis|self|top|parent)\s*\.\s*eval\b|,\s*eval\s*\)|\[\s*["\']eval["\']\s*\]'),
+     'eval() : exécution de code à partir d\'un texte', True),
+    (re.compile(r'(?<![\w.])(?:new\s+)?Function\(\s*["\'`]|\bnew\s+Function\('), 'Function() : exécution de code à partir d\'un texte', True),
+    (re.compile(r'(?i)["\']\s*javascript:'), 'adresse « javascript: » : exécution de code à partir d\'un texte', False),
+    (re.compile(r'\bimport\(\s*[^"\'`\s)]'), 'import() d\'une adresse calculée : le contrôle ne peut pas savoir ce qui sera chargé', False),
     (re.compile(r'\bdocument\.write\('), 'document.write() : à remplacer par la création d\'éléments', True),
     (re.compile(r'\bset(?:Timeout|Interval)\(\s*["\']'), 'setTimeout ou setInterval avec un texte : passer une fonction', False),
 ]
 RE_HTML_DYNAMIQUE = re.compile(r'\.(?:innerHTML|outerHTML)\s*\+?=|\.insertAdjacentHTML\(')
 RE_STOCKAGE = re.compile(r'\b(?:localStorage|sessionStorage)\.setItem\(|\bindexedDB\.open\(')
-EXT_PYTHON = {'.py'}
-EXT_WEB = {'.js', '.mjs', '.cjs', '.ts', '.html', '.htm', '.vue'}
+MOTIFS_PHP = [
+    (re.compile(r'(?<![\w>$])(?:eval|assert|system|exec|shell_exec|passthru|popen|proc_open)\s*\('), 'exécution de code ou de commande système', True),
+    (re.compile(r'`[^`\n]*\$[^`\n]*`'), 'commande système entre accents graves', True),
+    (re.compile(r'\bunserialize\s*\('), 'unserialize() : ne jamais relire ainsi une donnée reçue', True),
+    (re.compile(r'\b(?:include|require)(?:_once)?\s*\(?\s*\$'), 'include ou require d\'un chemin calculé', True),
+    (re.compile(r'->(?:query|exec)\s*\(\s*["\'][^"\'\n]*\$|->(?:query|exec)\s*\([^)\n]*["\']\s*\.\s*\$'),
+     'requête SQL construite avec du texte : utiliser une requête préparée', True),
+]
+MOTIFS_SHELL = [
+    (re.compile(r'(?i)\b(?:curl|wget)\b[^|\n]*\|\s*(?:sudo\s+)?(?:ba|z|da)?sh\b'), 'script téléchargé puis exécuté d\'un trait', True),
+    (re.compile(r'(?i)\b(?:Invoke-Expression|iex)\b'), 'Invoke-Expression : exécution de code à partir d\'un texte', True),
+    (re.compile(r'(?<![\w.])eval\s+["\'$]'), 'eval : exécution de code à partir d\'un texte', True),
+]
+EXT_PYTHON = {'.py', '.pyw'}
+EXT_WEB = {'.js', '.mjs', '.cjs', '.ts', '.jsx', '.tsx', '.html', '.htm', '.xhtml', '.vue', '.svelte', '.svg'}
+EXT_PHP = {'.php', '.phtml'}
+EXT_SHELL = {'.sh', '.bash', '.ps1', '.bat', '.cmd'}
+EXT_NON_COUVERTES = {'.rb', '.go', '.java', '.cs', '.pl', '.lua', '.rs', '.kt', '.swift', '.c', '.cpp', '.h', '.vbs', '.vba'}
 
 
 class VisiteurPython(ast.NodeVisitor):
@@ -558,42 +613,52 @@ def analyse_python(ctx: Contexte) -> None:
         ctx.bilan.reussi(f'Python : syntaxe correcte, aucune erreur avalée sans type ({len(fichiers)} fichier(s))')
 
 
-def chercher_motifs(ctx: Contexte, extensions: set[str], motifs: list) -> tuple[int, int]:
-    """Applique les motifs ligne à ligne. Retourne (lignes de bibliothèque embarquée sautées, erreurs trouvées)."""
-    sautees = erreurs = 0
-    for p in ctx.fichiers_code(extensions):
+def chercher_motifs(ctx: Contexte, extensions: set[str], motifs: list) -> int:
+    """Applique les motifs ligne à ligne et retourne le nombre d'erreurs.
+
+    Rien n'est sauté. Une ligne très longue (bibliothèque embarquée) donne une alerte au lieu d'un refus ; une exemption
+    doit être motivée (« nosec : la raison ») et elle est recopiée au bilan.
+    """
+    erreurs = 0
+    for p in ctx.fichiers_executables(extensions):
         for numero, ligne in enumerate((ctx.texte(p) or '').splitlines(), 1):
-            if len(ligne) > LIGNE_MINIFIEE:
-                sautees += 1
-                continue
-            if 'nosec' in ligne:
-                continue
             for motif, message, bloquant in motifs:
-                if motif.search(ligne):
+                if not motif.search(ligne):
+                    continue
+                if len(ligne) > LIGNE_MINIFIEE:
+                    ctx.lignes_longues.setdefault(ctx.rel(p), set()).add(message.split(' :')[0])
+                elif not exemptee(ctx, p, numero, ligne, 'nosec'):
                     erreurs += bloquant
                     (ctx.bilan.erreur if bloquant else ctx.bilan.alerte)(
-                        f'Code — {ctx.rel(p)}:{numero} : {message} (si c\'est justifié : « nosec : raison » sur la ligne)')
-    return sautees, erreurs
+                        f'Code — {ctx.rel(p)}:{numero} : {message} (si c\'est justifié : « nosec : la raison » sur la ligne)')
+    return erreurs
 
 
 def compter(ctx: Contexte, motif: re.Pattern) -> dict[str, int]:
-    """Nombre d'occurrences d'un motif par fichier web, hors bibliothèques embarquées et module de prise en main."""
+    """Nombre d'occurrences d'un motif par fichier web, hors lignes très longues, lignes exemptées avec raison et module de prise en main."""
     comptes: dict[str, int] = {}
     for p in ctx.fichiers_code(EXT_WEB):
         if p.name in MODULE_PRISE_EN_MAIN:
             continue
-        nombre = sum(1 for ligne in (ctx.texte(p) or '').splitlines()
-                     if len(ligne) <= LIGNE_MINIFIEE and 'nosec' not in ligne and motif.search(ligne))
+        nombre = sum(1 for numero, ligne in enumerate((ctx.texte(p) or '').splitlines(), 1)
+                     if len(ligne) <= LIGNE_MINIFIEE and motif.search(ligne) and not exemptee(ctx, p, numero, ligne, 'nosec'))
         if nombre:
             comptes[ctx.rel(p)] = nombre
     return comptes
 
 
 def motifs_dangereux(ctx: Contexte) -> None:
-    sautees_py, erreurs_py = chercher_motifs(ctx, EXT_PYTHON, MOTIFS_PYTHON)
-    sautees_web, erreurs_web = chercher_motifs(ctx, EXT_WEB, MOTIFS_WEB)
-    if not erreurs_py and not erreurs_web:
-        ctx.bilan.reussi('Aucun motif dangereux dans le code (eval, shell=True, SQL construit, document.write…)')
+    erreurs = sum(chercher_motifs(ctx, extensions, motifs) for extensions, motifs in (
+        (EXT_PYTHON, MOTIFS_PYTHON), (EXT_WEB, MOTIFS_WEB), (EXT_PHP, MOTIFS_PHP), (EXT_SHELL, MOTIFS_SHELL)))
+    if not erreurs:
+        ctx.bilan.reussi('Aucun motif dangereux repéré dans le code (eval, shell=True, SQL construit, document.write…)')
+    for fichier, natures in sorted(ctx.lignes_longues.items()):
+        ctx.bilan.alerte(f'Ligne très longue contenant {", ".join(sorted(natures))} — {fichier}. Si c\'est une bibliothèque embarquée, '
+                         'la déclarer dans docs/composants.md ; sinon, remettre ce code sur des lignes normales pour qu\'il soit contrôlé')
+    autres = [ctx.rel(p) for p in ctx.fichiers_executables(EXT_NON_COUVERTES)]
+    if autres:
+        ctx.bilan.non_teste(f'Langage non couvert par la recherche de motifs dangereux ({len(autres)} fichier(s) : {", ".join(autres[:5])}) : '
+                            'seuls les secrets, les adresses et les données de personnes y sont cherchés ; relecture humaine nécessaire')
     dynamique = compter(ctx, RE_HTML_DYNAMIQUE)
     if dynamique:
         detail = ', '.join(f'{f} ({n})' for f, n in dynamique.items())
@@ -605,9 +670,6 @@ def motifs_dangereux(ctx: Contexte) -> None:
         if not fichiers_qui_contiennent(ctx, re.compile(r'(?i)\bexport|sauvegarder|t[ée]l[ée]charger')):
             ctx.bilan.alerte('Les saisies sont gardées dans le navigateur, sans fonction d\'export : elles disparaissent si l\'agent change de poste '
                              'ou vide son navigateur. Prévoir « Exporter » et « Importer » (fichier JSON)')
-    if sautees_py + sautees_web:
-        ctx.bilan.non_teste(f'{sautees_py + sautees_web} ligne(s) de bibliothèque embarquée (très longues) non analysées : '
-                            'elles relèvent de docs/composants.md')
 
 
 RE_SCRIPT_INTERNE = re.compile(r'(?is)<script\b([^>]*)>(.*?)</script>')
@@ -670,25 +732,56 @@ def controle_code(ctx: Contexte) -> None:
     motifs_dangereux(ctx)
 
 
+# ================================================================ exemptions motivées
+RE_EXEMPTION = {
+    'nosec': (re.compile(r'\bnosec\b(?!ret)\s*:\s*(\S.{4,})'), re.compile(r'\bnosec\b(?!ret)')),
+    'nosecret': (re.compile(r'\bnosecret\b\s*:\s*(\S.{4,})'), re.compile(r'\bnosecret\b')),
+}
+
+
+def exemptee(ctx: Contexte, p: Chemin, numero: int, ligne: str, marqueur: str) -> bool:
+    """Vrai si la ligne porte une exemption motivée (« nosec : la raison »). Elle est recopiée au bilan : rien n'est levé en silence."""
+    avec_raison, nu = RE_EXEMPTION[marqueur]
+    m = avec_raison.search(ligne)
+    if m:
+        raison = re.sub(r'\s*(?:\*/|-->|#\}|%\})\s*$', '', m.group(1)).strip()[:90]
+        note = f'{ctx.rel(p)}:{numero} — {marqueur} : {raison}'
+        if note not in ctx.bilan.exemptions:
+            ctx.bilan.exemptions.append(note)
+        return True
+    if nu.search(ligne):
+        message = (f'Exemption sans raison — {ctx.rel(p)}:{numero} : écrire « {marqueur} : la raison ». '
+                   'Sans raison écrite, le marqueur ne compte pas')
+        if message not in ctx.bilan.erreurs:
+            ctx.bilan.erreur(message)
+    return False
+
+
 # ================================================================ 6. secrets
-RE_SECRET_QUOTE = re.compile(r'(?i)(password|passwd|mot_de_passe|motdepasse|secret|token|api[_-]?key|apikey)'
+RE_SECRET_QUOTE = re.compile(r'(?i)(password|passwd|pwd|mot_?de_?passe|mdp|passphrase|secret|token|api[_-]?key|apikey|credential)'
                              r'["\']?\s*[:=]\s*["\']([^"\'\s]{6,})["\']')
-RE_SECRET_BRUT = re.compile(r'(?im)^\s*[A-Z0-9_]*(PASSWORD|PASSWD|MOT_DE_PASSE|MOTDEPASSE|SECRET|TOKEN|API_?KEY)[A-Z0-9_]*'
+RE_SECRET_BRUT = re.compile(r'(?im)^\s*[A-Z0-9_]*(PASSWORD|PASSWD|PWD|MOT_DE_PASSE|MOTDEPASSE|MDP|PASSPHRASE|SECRET|TOKEN|API_?KEY)[A-Z0-9_]*'
                             r'\s*[:=]\s*([^\s#"\'$<{][^\s#]*)')
-RE_JETONS = [re.compile(p) for p in (r'-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----', r'AKIA[0-9A-Z]{16}',
-                                      r'\bsk-[A-Za-z0-9]{20,}', r'\bghp_[A-Za-z0-9]{30,}', r'\bxox[bp]-[A-Za-z0-9-]{10,}')]
-FACTICE = re.compile(r'(?i)(changeme|exemple|example|xxx+|\*{3,}|fictif|motdepasse|votre|your|placeholder|todo|à[-_ ]?compléter)')
+RE_JETONS = [re.compile(p) for p in (
+    r'-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY', r'\bAKIA[0-9A-Z]{16}\b', r'\bsk-[A-Za-z0-9_-]{20,}', r'\bsk_live_[0-9A-Za-z]{16,}',
+    r'\bgh[pousr]_[A-Za-z0-9]{30,}', r'\bgithub_pat_[A-Za-z0-9_]{30,}', r'\bglpat-[A-Za-z0-9_-]{20,}', r'\bxox[abprs]-[A-Za-z0-9-]{10,}',
+    r'\bAIza[0-9A-Za-z_-]{35}\b', r'\beyJ[A-Za-z0-9_-]{12,}\.eyJ[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{8,}')]
+RE_ADRESSE_AVEC_MOT_DE_PASSE = re.compile(r'(?i)\b[a-z][a-z0-9+.-]{1,20}://[^/\s:@"\'<>{}$]{1,64}:([^/\s:@"\'<>{}$]{3,})@[a-z0-9.-]+')
+# Une valeur est tenue pour factice seulement si elle commence par un mot de remplissage : « votre-mot-de-passe », pas « Secret-votre-2026 ».
+FACTICE = re.compile(r'(?i)^(?:changeme|change[-_ ]?me|exemple|example|x{3,}|\*{3,}|\.{3,}|fictif|factice|motdepasse|mot[-_ ]de[-_ ]passe|password|'
+                     r'votre|your|placeholder|todo|à[-_ ]?compléter|<)')
 VALEUR_INDIRECTE = ('${', '{{', '$(', '%', 'os.', 'process.')
-EXT_VALEUR_BRUTE = {'.yaml', '.yml', '.ini', '.conf', '.cfg', '.toml', '.env', '.exemple', '.sh', '.ps1'}
+EXT_VALEUR_BRUTE = {'.yaml', '.yml', '.ini', '.conf', '.cfg', '.toml', '.env', '.exemple', '.sh', '.ps1', '.properties', '.tfvars'}
 
 
 def secret_dans_ligne(ligne: str, valeur_brute: bool, documentation: bool) -> str | None:
-    """Nature du secret repéré dans la ligne, ou None."""
-    if 'nosecret' in ligne:
-        return None
+    """Nature du secret repéré dans la ligne, ou None. Les jetons et clés sont cherchés partout, même dans une ligne très longue."""
     if any(jeton.search(ligne) for jeton in RE_JETONS):
         return 'jeton ou clé privée'
-    if documentation:
+    adresse = RE_ADRESSE_AVEC_MOT_DE_PASSE.search(ligne)
+    if adresse and not FACTICE.search(adresse.group(1)):
+        return 'mot de passe écrit dans une adresse'
+    if documentation or len(ligne) > LIGNE_MINIFIEE:
         return None
     candidats = [RE_SECRET_QUOTE.search(ligne)] + ([RE_SECRET_BRUT.search(ligne)] if valeur_brute else [])
     for m in candidats:
@@ -726,13 +819,13 @@ def controle_secrets(ctx: Contexte) -> None:
         suffixe = p.suffix.lower()
         valeur_brute = suffixe in EXT_VALEUR_BRUTE or p.name.startswith('.env')
         for numero, ligne in enumerate((ctx.texte(p) or '').splitlines(), 1):
-            nature = secret_dans_ligne(ligne, valeur_brute, suffixe == '.md') if len(ligne) <= LIGNE_MINIFIEE else None
-            if nature:
+            nature = secret_dans_ligne(ligne, valeur_brute, suffixe == '.md')
+            if nature and not exemptee(ctx, p, numero, ligne, 'nosecret'):
                 trouves.add(f'{ctx.rel(p)}:{numero} ({nature})')
     for fichier in fichiers_env_reels(ctx):
         trouves.add(f'{fichier} (fichier .env réel : à ne jamais laisser dans le dossier de travail)')
     for trouve in sorted(trouves):
-        ctx.bilan.erreur('Secret possible — ' + trouve + ' (si c\'est un exemple fictif, ajouter « nosecret » sur la ligne)')
+        ctx.bilan.erreur('Secret possible — ' + trouve + ' (si c\'est un exemple fictif : « nosecret : la raison » sur la ligne)')
     if not trouves:
         ctx.bilan.reussi('Aucun secret en dur repéré (contrôle intégré)')
     if not re.search(r'(?m)^\.env\s*$', ctx.texte(ctx.racine / '.gitignore') or ''):
@@ -741,53 +834,185 @@ def controle_secrets(ctx: Contexte) -> None:
 
 
 # ================================================================ 7. réseau sortant
-RE_RESSOURCES = [
-    re.compile(r'(?is)<script\b[^>]*\bsrc\s*=\s*["\'](?:https?:)?//([^/"\'?#:]+)'),
-    re.compile(r'(?is)<link\b[^>]*\bhref\s*=\s*["\'](?:https?:)?//([^/"\'?#:]+)'),
-    re.compile(r'(?is)<(?:img|source|iframe|video|audio|embed|object)\b[^>]*\b(?:src|data)\s*=\s*["\'](?:https?:)?//([^/"\'?#:]+)'),
-    re.compile(r'(?i)@import\s+(?:url\()?["\']?(?:https?:)?//([^/"\')?#:]+)'),
-    re.compile(r'(?i)\burl\(\s*["\']?(?:https?:)?//([^/"\')?#:]+)'),
-    re.compile(r'(?i)\bfetch\(\s*["\'`](?:https?:)?//([^/"\'`?#:]+)'),
-    re.compile(r'(?i)\.open\(\s*["\'][A-Z]+["\']\s*,\s*["\'`](?:https?:)?//([^/"\'`?#:]+)'),
-    re.compile(r'(?i)new\s+(?:WebSocket|EventSource)\(\s*["\'`](?:wss?|https?)://([^/"\'`?#:]+)'),
-    re.compile(r'(?i)\bimport\b[^;\n]*\bfrom\s*["\']https?://([^/"\'?#:]+)'),
-    re.compile(r'(?i)(?:requests\.(?:get|post|put|delete|request|head)|urlopen|httpx\.\w+|axios(?:\.\w+)?|curl\s+-\S*)'
-               r'\s*\(?\s*["\']?https?://([^/"\'\s?#:]+)'),
-]
-HOTES_TOLERES = {'localhost', '127.0.0.1', '::1', 'www.w3.org'}   # espaces de noms XML/SVG : pas un appel réseau
+RE_ADRESSE = re.compile(r'(?i)\b(?:https?|wss?|ftp)://([a-z0-9][a-z0-9.-]*)')
+RE_ADRESSE_RELATIVE = re.compile(r'''(?i)(?:\b(?:src|href|action|data|poster)\s*=\s*["']|\burl\(\s*["']?|@import\s+["']|["'`])//([a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,})''')
+RE_ADRESSE_CONSTRUITE = re.compile(r'''(?i)\b(?:https?|wss?|ftp)://(?:["'`]\s*(?:\+|%|\.\s*(?:concat|format)\b)|\$\{|\{|%[sd(])''')
+RE_API_RESEAU = re.compile(r'\b(?:fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|importScripts)\b'
+                           r'|\b(?:requests|httpx|aiohttp|urllib3?|smtplib|ftplib|paramiko|socket|telnetlib)\.\w'
+                           r'|\bhttp\.client\b|\bInvoke-(?:WebRequest|RestMethod)\b|\b(?:curl|wget)\s')
+COMMENTAIRE_DIESE = re.compile(r'\s*#(?!!)')
+COMMENTAIRE_BARRES = re.compile(r'\s*(?://|/\*|\*(?:\s|/|$)|<!--)')
+EXT_COMMENTAIRE_DIESE = {'.py', '.pyw', '.sh', '.bash', '.ps1', '.yml', '.yaml', '.toml', '.cfg', '.ini', '.conf', '.rb', '.pl', ''}
+EXT_COMMENTAIRE_BARRES = EXT_WEB | {'.css', '.php', '.phtml', '.java', '.cs', '.go', '.c', '.cpp', '.h', '.rs', '.kt', '.swift'}
+EXT_SANS_ADRESSES = {'.md', '.txt', '.rst', '.csv', '.tsv', '.sha256'}        # documentation et données : pas du code
+NOMS_SANS_ADRESSES = {'license', 'licence', 'notice', 'changelog', 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'poetry.lock',
+                      'uv.lock', 'pipfile.lock'}
+# Espaces de noms XML et SVG : des identifiants, pas des appels réseau.
+HOTES_TOLERES = {'localhost', '127.0.0.1', '::1', '0.0.0.0', 'www.w3.org', 'schemas.openxmlformats.org', 'schemas.microsoft.com',  # noqa: S104
+                 'purl.org', 'ns.adobe.com', 'xmlns.com', 'www.inkscape.org', 'sodipodi.sourceforge.net', 'json-schema.org',
+                 'example.com', 'example.org', 'example.net'}
+DOMAINES_RESERVES = ('.invalid', '.example', '.test', '.localhost')             # jamais joignables, par construction
+
+
+def hote_tolere(hote: str) -> bool:
+    return hote in HOTES_TOLERES or hote.endswith(DOMAINES_RESERVES) or re.fullmatch(r'127(?:\.\d{1,3}){3}', hote) is not None
 
 
 def hotes_autorises(ctx: Contexte) -> set[str]:
     """Hôtes déclarés dans reseau-autorise.txt ; un hôte sans raison écrite est refusé."""
-    autorises = set()
-    for ligne in (ctx.texte(ctx.racine / 'reseau-autorise.txt') or '').splitlines():
-        mots = ligne.split('#', 1)[0].split()
-        if not mots:
-            continue
-        autorises.add(mots[0].lower())
-        if len(mots) < 2:
-            ctx.bilan.erreur(f'reseau-autorise.txt : l\'hôte « {mots[0]} » est déclaré sans raison (écrire la raison après le nom)')
-    return autorises
+    if ctx._hotes is None:
+        ctx._hotes = set()
+        for ligne in (ctx.texte(ctx.racine / 'reseau-autorise.txt') or '').splitlines():
+            mots = ligne.split('#', 1)[0].split()
+            if not mots:
+                continue
+            hote = re.sub(r'(?i)^[a-z]+://', '', mots[0]).split('/')[0].lower()
+            if '*' in hote or '.' not in hote and hote != 'localhost':
+                ctx.bilan.erreur(f'reseau-autorise.txt : « {mots[0]} » n\'est pas un nom d\'hôte complet (pas de joker, pas de domaine entier)')
+                continue
+            ctx._hotes.add(hote)
+            if len(mots) < 2:
+                ctx.bilan.erreur(f'reseau-autorise.txt : l\'hôte « {mots[0]} » est déclaré sans raison (écrire la raison après le nom)')
+    return ctx._hotes
+
+
+def fichiers_avec_adresses(ctx: Contexte) -> list[Chemin]:
+    """Tout fichier texte du projet où une adresse est du code : tout, sauf la documentation, les données et les fichiers de verrouillage."""
+    return [p for p in ctx.fichiers() if p.suffix.lower() not in EXT_SANS_ADRESSES and p.name.lower() not in NOMS_SANS_ADRESSES
+            and p.name != 'reseau-autorise.txt']
+
+
+def est_commentaire(p: Chemin, ligne: str) -> bool:
+    suffixe = p.suffix.lower()
+    return bool((suffixe in EXT_COMMENTAIRE_DIESE and COMMENTAIRE_DIESE.match(ligne))
+                or (suffixe in EXT_COMMENTAIRE_BARRES and COMMENTAIRE_BARRES.match(ligne)))
+
+
+def seulement_un_lien(ligne: str, hote: str) -> bool:
+    """Vrai si l'hôte n'apparaît dans la ligne que comme lien cliquable (<a href>)."""
+    liens = len(re.findall(r'(?i)<a\b[^>]*\bhref\s*=\s*["\'](?:https?:)?//' + re.escape(hote), ligne))
+    return liens > 0 and liens == ligne.lower().count('//' + hote)
+
+
+@dataclasses.dataclass
+class Adresses:
+    """Ce que la lecture du code a relevé : hôtes non déclarés, liens, lignes longues, adresses construites, fichiers qui appellent le réseau."""
+    hors: dict[str, set[str]] = dataclasses.field(default_factory=dict)
+    liens: dict[str, set[str]] = dataclasses.field(default_factory=dict)
+    longues: dict[str, set[str]] = dataclasses.field(default_factory=dict)
+    construites: list[str] = dataclasses.field(default_factory=list)
+    appels: list[str] = dataclasses.field(default_factory=list)
+
+
+def relever_ligne(ctx: Contexte, p: Chemin, numero: int, ligne: str, autorises: set[str], releve: Adresses) -> None:
+    longue = len(ligne) > LIGNE_MINIFIEE
+    if not longue and RE_ADRESSE_CONSTRUITE.search(ligne) and not exemptee(ctx, p, numero, ligne, 'nosec'):
+        releve.construites.append(f'{ctx.rel(p)}:{numero}')
+    for hote in {h.lower().rstrip('.-') for h in RE_ADRESSE.findall(ligne) + RE_ADRESSE_RELATIVE.findall(ligne)}:
+        if hote and not hote_tolere(hote) and hote not in autorises:
+            cible = releve.longues if longue else releve.liens if seulement_un_lien(ligne, hote) else releve.hors
+            cible.setdefault(hote, set()).add(ctx.rel(p))
+
+
+def relever_adresses(ctx: Contexte, autorises: set[str]) -> Adresses:
+    releve = Adresses()
+    for p in fichiers_avec_adresses(ctx):
+        texte = ctx.texte(p) or ''
+        if RE_API_RESEAU.search(texte):
+            releve.appels.append(ctx.rel(p))
+        for numero, ligne in enumerate(texte.splitlines(), 1) if '//' in texte else ():
+            if '//' in ligne and not est_commentaire(p, ligne):
+                relever_ligne(ctx, p, numero, ligne, autorises, releve)
+    return releve
 
 
 def controle_reseau(ctx: Contexte) -> None:
+    """Toute adresse écrite dans le code doit être déclarée : qu'elle soit dans l'appel, dans une constante ou dans un réglage."""
     autorises = hotes_autorises(ctx)
-    hors: dict[str, set[str]] = {}
-    for p in ctx.fichiers(extensions={'.py', '.js', '.mjs', '.ts', '.html', '.htm', '.css', '.sh', '.ps1', '.vue'}):
-        texte = ctx.texte(p) or ''
-        for motif in RE_RESSOURCES:
-            for m in motif.finditer(texte):
-                hote = m.group(1).lower()
-                if hote not in HOTES_TOLERES and hote not in autorises:
-                    hors.setdefault(hote, set()).add(ctx.rel(p))
-    for hote, sources in sorted(hors.items()):
+    releve = relever_adresses(ctx, autorises)
+    for hote, sources in sorted(releve.hors.items()):
         rappel = ' — règle absolue : aucun appel à l\'API Anthropic' if 'anthropic' in hote else ''
-        ctx.bilan.erreur(f'Appel réseau non déclaré vers « {hote} » dans {", ".join(sorted(sources)[:3])}{rappel}. '
-                         'Soit on le supprime (bibliothèque embarquée), soit on l\'ajoute à reseau-autorise.txt avec sa raison')
-    if not hors:
+        ctx.bilan.erreur(f'Adresse non déclarée « {hote} » dans {", ".join(sorted(sources)[:3])}{rappel}. '
+                         'Soit on la supprime (bibliothèque embarquée), soit on l\'ajoute à reseau-autorise.txt avec sa raison')
+    for ou in releve.construites[:8]:
+        ctx.bilan.erreur(f'Adresse construite à l\'exécution — {ou} : le contrôle ne peut pas vérifier la destination. Écrire l\'adresse '
+                         'complète et la déclarer dans reseau-autorise.txt, ou justifier par « nosec : la raison » sur la ligne')
+    if releve.liens:
+        ctx.bilan.alerte('Lien cliquable vers l\'extérieur non déclaré : ' + ', '.join(sorted(releve.liens)[:8])
+                         + '. Un lien n\'envoie rien tout seul, mais il doit figurer dans reseau-autorise.txt avec sa raison')
+    for hote, sources in sorted(releve.longues.items())[:12]:
+        ctx.bilan.alerte(f'Adresse « {hote} » dans une ligne très longue de {", ".join(sorted(sources)[:2])} : si c\'est une bibliothèque '
+                         'embarquée, la déclarer dans docs/composants.md ; sinon, déclarer l\'adresse ou la retirer')
+    if not releve.hors and not releve.construites:
         declares = f' ({len(autorises)} hôte(s) déclaré(s))' if autorises else ''
-        ctx.bilan.reussi('Aucun appel réseau sortant hors liste déclarée' + declares)
+        ctx.bilan.reussi('Aucune adresse hors liste déclarée repérée dans le code' + declares)
+    if releve.appels:
+        suite = ('la balise de sécurité de la page (CSP) fait bloquer le reste par le navigateur' if ctx.format == 'A'
+                 else 'demander à la DSI de limiter les sorties du serveur aux hôtes de reseau-autorise.txt')
+        ctx.bilan.non_teste(f'Le code sait appeler le réseau ({", ".join(releve.appels[:4])}) : le contrôle ne voit que les adresses '
+                            f'écrites en clair, pas celles calculées ou saisies ; {suite}')
     ctx.bilan.non_teste('Le contrôle réseau lit le code ; le test navigateur (test_prise_en_main.py, ou Playwright) vérifie l\'exécution réelle')
+
+
+RE_CSP = re.compile(r'(?is)<meta\b[^>]*http-equiv\s*=\s*["\']Content-Security-Policy["\'][^>]*\bcontent\s*=\s*"([^"]*)"')
+SOURCES_CSP_LOCALES = {"'self'", "'none'", "'unsafe-inline'", "'unsafe-eval'", "'wasm-unsafe-eval'", 'data:', 'blob:'}
+
+
+def csp_conseillee(autorises: set[str]) -> str:
+    hotes = ' '.join('https://' + h for h in sorted(autorises))
+    return ('<meta http-equiv="Content-Security-Policy" content="default-src \'self\' \'unsafe-inline\' data: blob:'
+            + (' ' + hotes if hotes else '') + '; connect-src ' + (hotes or "'none'") + '; form-action \'self\'; base-uri \'self\'">')
+
+
+def sources_csp_refusees(directives: dict[str, list[str]], autorises: set[str]) -> list[tuple[str, str]]:
+    """Sources d'une balise CSP qui ouvrent plus que la liste déclarée : (directive, source)."""
+    refusees = []
+    for nom, sources in directives.items():
+        for source in sources if nom.endswith('-src') or nom in ('form-action', 'base-uri') else []:
+            if source.lower() in SOURCES_CSP_LOCALES or source.startswith(("'sha", "'nonce-")):
+                continue
+            hote = re.sub(r'(?i)^[a-z]+://', '', source).split('/')[0].split(':')[0].lower()
+            if '*' in source or source.endswith(':') or not (hote in autorises or hote_tolere(hote)):
+                refusees.append((nom, source))
+    return refusees
+
+
+def controle_csp(ctx: Contexte) -> None:
+    """Format A : chaque page porte une balise qui fait bloquer par le navigateur tout appel hors de la liste déclarée.
+
+    C'est la seule vérification qui porte sur l'exécution réelle : elle tient même si une adresse a échappé à la lecture du code.
+    Sans « 'unsafe-eval' », elle fait aussi refuser eval() par le navigateur, même déguisé.
+    """
+    pages = ctx.fichiers_code({'.html', '.htm'}) if ctx.format == 'A' else []
+    autorises = hotes_autorises(ctx)
+    sans, fautes = [], 0
+    for p in pages:
+        balise = RE_CSP.search(ctx.texte(p) or '')
+        if not balise:
+            sans.append(ctx.rel(p))
+            continue
+        directives = {mots[0].lower(): mots[1:] for mots in (d.split() for d in balise.group(1).split(';')) if mots}
+        if 'default-src' not in directives:
+            fautes += 1
+            ctx.bilan.erreur(f'Balise de sécurité (CSP) incomplète — {ctx.rel(p)} : il manque « default-src »')
+        for nom, source in sources_csp_refusees(directives, autorises):
+            fautes += 1
+            ctx.bilan.erreur(f'Balise de sécurité (CSP) trop large — {ctx.rel(p)} : « {source} » dans {nom} '
+                             'n\'est pas un hôte déclaré dans reseau-autorise.txt')
+        manquantes = [nom for nom in ('form-action', 'base-uri') if nom not in directives]
+        if manquantes:
+            ajout = ' ; '.join(nom + " 'self'" for nom in manquantes)
+            ctx.bilan.alerte(f'Balise de sécurité (CSP) — {ctx.rel(p)} : ajouter « {ajout} » ; '
+                             'sans cela, un formulaire ou une balise <base> peut encore envoyer vers une adresse non déclarée')
+        if "'unsafe-eval'" in balise.group(1):
+            ctx.bilan.alerte(f'Balise de sécurité (CSP) — {ctx.rel(p)} : « \'unsafe-eval\' » autorise eval() dans la page ; '
+                             'à retirer sauf si une bibliothèque déclarée en a besoin')
+    if sans:
+        (ctx.bilan.alerte if ctx.brouillon else ctx.bilan.erreur)(
+            f'Balise de sécurité (CSP) absente — {", ".join(sans[:4])} : sans elle, rien n\'empêche la page d\'appeler une adresse '
+            f'non déclarée. Ajouter dans <head> : {csp_conseillee(autorises)}')
+    elif pages and not fautes:
+        ctx.bilan.reussi(f'Balise de sécurité (CSP) présente : le navigateur bloque tout appel hors liste déclarée ({len(pages)} page(s))')
 
 
 # ================================================================ 8. dépendances figées
@@ -1008,6 +1233,19 @@ def ports_ouverts(bloc: list[str]) -> list[str]:
     return ouverts
 
 
+# Réglages qui donnent au conteneur la main sur le serveur : toujours refusés.
+INTERDITS_COMPOSE = (
+    (r'(?m)^\s+privileged:\s*["\']?true', '« privileged » interdit'),
+    (r'(?m)^\s+(?:network_mode|pid|ipc|userns_mode):\s*["\']?host', '« network_mode », « pid », « ipc » ou « userns_mode » à « host » interdits'),
+    (r'docker\.sock|podman\.sock', 'accès à la socket du moteur de conteneurs interdit (il donne la main sur tout le serveur)'),
+    (r'(?m)^\s+-\s*["\']?(?:/|/etc|/root|/home|/var|/usr|/boot|/proc|/sys|/dev)/?:', 'montage d\'un dossier système du serveur interdit'),
+    (r'(?m)^\s+cap_add:', '« cap_add » interdit sans exception validée (capacités système ajoutées)'),
+    (r'(?m)^\s+devices:', '« devices » interdit (accès direct au matériel du serveur)'),
+    (r'(?i)(?:seccomp|apparmor)[:=]unconfined', 'protections du noyau désactivées (seccomp ou apparmor « unconfined »)'),
+    (r'(?m)^\s+user:\s*["\']?(?:root|0)(?::\S*)?["\']?\s*(?:#.*)?$', '« user: root » interdit : choisir un utilisateur non root'),
+)
+
+
 def fautes_service(ctx: Contexte, nom: str, bloc: list[str]) -> list[str]:
     """Écarts bloquants d'un service du compose."""
     texte = '\n'.join(bloc)
@@ -1022,8 +1260,9 @@ def fautes_service(ctx: Contexte, nom: str, bloc: list[str]) -> list[str]:
         fautes.append(f'{nom} : ni image ni build')
     if not re.search(r'(?m)^\s+restart:\s*["\']?always["\']?\s*(#.*)?$', texte):
         fautes.append(f'{nom} : « restart: always » manquant (seule valeur relancée après un redémarrage de la VM)')
-    if re.search(r'(?m)^\s+privileged:\s*true', texte) or re.search(r'(?m)^\s+network_mode:\s*["\']?host', texte):
-        fautes.append(f'{nom} : « privileged » ou « network_mode: host » interdits')
+    for motif, faute in INTERDITS_COMPOSE:
+        if re.search(motif, texte):
+            fautes.append(f'{nom} : {faute}')
     fautes += [f'{nom} : port « {port} » publié sur toutes les interfaces (écrire 127.0.0.1:port:port)' for port in ports_ouverts(bloc)]
     for ligne in bloc:
         m = RE_SECRET_COMPOSE.match(ligne)
@@ -1228,8 +1467,9 @@ def controle_partage(ctx: Contexte) -> None:
 RE_NIR = re.compile(r'(?<![\dA-Za-z])([12])\s?(\d{2})\s?(0[1-9]|1[0-2]|[2-9]\d)\s?(\d{2}|2[AB])\s?(\d{3})\s?(\d{3})\s?(\d{2})(?![\dA-Za-z])')
 RE_IBAN_FR = re.compile(r'(?<![0-9A-Za-z])FR\d{2}(?:\s?[0-9A-Z]{4}){5}\s?[0-9A-Z]{3}(?![0-9A-Za-z])')
 IBAN_DOCUMENTAIRES = {'FR7630006000011234567890189', 'FR1420041010050500013M02606'}   # exemples publics des documentations bancaires
-EXT_DONNEES = {'.csv', '.tsv', '.json', '.txt', '.md', '.html', '.htm', '.js', '.py', '.xml', '.yml', '.yaml', '.sql'}
-DOSSIERS_HORS_DONNEES = {'build', 'dist', 'node_modules', '.git', '__pycache__', 'briques'}
+EXT_BUREAUTIQUE = {'.xlsx', '.xlsm', '.docx', '.pptx', '.odt', '.ods', '.odp'}     # des archives de fichiers XML : lisibles
+EXT_DOCUMENTS_FERMES = {'.pdf', '.xls', '.doc', '.ppt', '.mdb', '.accdb'}            # non lisibles par ce contrôle
+DOSSIERS_HORS_DONNEES = {'dist', 'node_modules', '.git', '__pycache__', '.venv', 'venv', '.pytest_cache', '.ruff_cache'}
 FICHIER_FICTIFS = 'tests/donnees/exemples-fictifs.txt'
 
 
@@ -1250,14 +1490,37 @@ def valeurs_a_cle_valide(ligne: str) -> list[tuple[str, str]]:
     return valeurs + [('IBAN', m.group(0)) for m in RE_IBAN_FR.finditer(ligne) if iban_valide(m.group(0))]
 
 
-def fichiers_de_donnees(ctx: Contexte) -> list[Chemin]:
-    retenus = []
+def fichiers_de_donnees(ctx: Contexte) -> tuple[list[Chemin], list[Chemin], list[str]]:
+    """Fichiers où chercher des données de personnes : (textes, documents bureautiques, documents non lisibles).
+
+    Tout le dossier de travail est regardé, y compris data/ qui ne part pas dans le paquet : une donnée réelle n'a rien
+    à faire dans un dossier que lit l'IA qui fabrique.
+    """
+    textes, bureautiques, fermes = [], [], []
     for p in sorted(ctx.racine.rglob('*')):
-        if not p.is_file() or p.suffix.lower() not in EXT_DONNEES or DOSSIERS_HORS_DONNEES & set(p.relative_to(ctx.racine).parts):
+        parties = p.relative_to(ctx.racine).parts
+        if not p.is_file() or p.is_symlink() or DOSSIERS_HORS_DONNEES & set(parties) or ctx.rel(p) == FICHIER_FICTIFS:
             continue
-        if ctx.rel(p) != FICHIER_FICTIFS and p.stat().st_size <= 2_000_000:
-            retenus.append(p)
-    return retenus
+        if p == ctx.racine / 'build' / 'fabriquer.py':
+            continue
+        suffixe = p.suffix.lower()
+        if suffixe in EXT_BUREAUTIQUE and p.stat().st_size <= 40_000_000:
+            bureautiques.append(p)
+        elif suffixe in EXT_DOCUMENTS_FERMES:
+            fermes.append(ctx.rel(p))
+        elif p.stat().st_size <= TAILLE_MAX_TEXTE and ctx.est_texte(p):
+            textes.append(p)
+    return textes, bureautiques, fermes
+
+
+def textes_bureautiques(p: Chemin) -> list[str]:
+    """Texte des parties XML d'un classeur ou d'un document (xlsx, docx, odt…), balises retirées."""
+    try:
+        with zipfile.ZipFile(p) as archive:
+            return [re.sub(r'<[^>]+>', ' ', archive.read(nom).decode('utf-8', errors='replace'))
+                    for nom in archive.namelist() if nom.endswith('.xml') and archive.getinfo(nom).file_size <= 40_000_000]
+    except (zipfile.BadZipFile, OSError, KeyError, RuntimeError):
+        return []
 
 
 def controle_donnees_personnes(ctx: Contexte) -> None:
@@ -1268,14 +1531,16 @@ def controle_donnees_personnes(ctx: Contexte) -> None:
     """
     declares = {re.sub(r'\s', '', ligne).upper() for ligne in (ctx.texte(ctx.racine / FICHIER_FICTIFS) or '').splitlines()
                 if ligne.strip() and not ligne.lstrip().startswith('#')}
+    textes, bureautiques, fermes = fichiers_de_donnees(ctx)
     trouvailles, acceptes = [], 0
-    for p in fichiers_de_donnees(ctx):
-        for numero, ligne in enumerate((ctx.texte(p) or '').splitlines(), 1):
-            for nature, valeur in (valeurs_a_cle_valide(ligne) if len(ligne) <= LIGNE_MINIFIEE else []):
-                if re.sub(r'\s', '', valeur).upper() in declares:
-                    acceptes += 1
-                else:
-                    trouvailles.append(f'{nature} à clé valide — {ctx.rel(p)}, ligne {numero} ({valeur[:4]}…)')
+    sources = [(ctx.rel(p), numero, ligne) for p in textes for numero, ligne in enumerate((ctx.texte(p) or '').splitlines(), 1)]
+    sources += [(ctx.rel(p) + ' (document)', numero, partie) for p in bureautiques for numero, partie in enumerate(textes_bureautiques(p), 1)]
+    for ou, numero, ligne in sources:
+        for nature, valeur in valeurs_a_cle_valide(ligne):
+            if re.sub(r'\s', '', valeur).upper() in declares:
+                acceptes += 1
+            else:
+                trouvailles.append(f'{nature} à clé valide — {ou}, ligne {numero} ({valeur[:4]}…)')
     for trouvaille in trouvailles[:8]:
         ctx.bilan.erreur(f'Donnée de personne possible : {trouvaille}. Une clé juste signale presque toujours une donnée réelle : '
                          f'la retirer. Si c\'est un exemple inventé, changer un chiffre, ou le déclarer dans {FICHIER_FICTIFS}')
@@ -1284,7 +1549,11 @@ def controle_donnees_personnes(ctx: Contexte) -> None:
     if acceptes:
         ctx.bilan.alerte(f'{acceptes} exemple(s) à clé valide déclaré(s) fictif(s) dans {FICHIER_FICTIFS} : à faire confirmer par le référent')
     if not trouvailles:
-        ctx.bilan.reussi('Aucun numéro de sécurité sociale ni IBAN à clé valide dans le dossier')
+        ctx.bilan.reussi('Aucun numéro de sécurité sociale ni IBAN à clé valide repéré dans le dossier'
+                         + (f' ({len(bureautiques)} classeur(s) ou document(s) lus)' if bureautiques else ''))
+    if fermes:
+        ctx.bilan.non_teste(f'{len(fermes)} document(s) que le contrôle ne sait pas lire ({", ".join(fermes[:5])}) : '
+                            'vérifier à la main qu\'ils ne contiennent que des données inventées')
 
 
 # ================================================================ 16. classe de l'outil (ce que coûte une panne)
@@ -1451,6 +1720,64 @@ def exclu(nom_relatif: str) -> bool:
     return any(fnmatch.fnmatch(p, motif) for p in parties for motif in EXCLUS_PAQUET)
 
 
+NOMS_DE_CLES = ('*.pem', '*.key', '*.p12', '*.pfx', '*.jks', '*.keystore', '*.kdbx', '*.ppk', 'id_rsa', 'id_dsa', 'id_ecdsa', 'id_ed25519')
+EXT_EXECUTABLES = {'.exe', '.dll', '.so', '.dylib', '.msi', '.jar', '.class', '.com', '.scr', '.bin', '.pyc', '.pyd'}
+
+
+def fichiers_du_paquet(ctx: Contexte) -> list[Chemin]:
+    """Ce qui part dans le paquet. Le contrôle lit cette même liste : ce qui part est contrôlé, ou signalé comme non contrôlé."""
+    return [p for p in sorted(ctx.racine.rglob('*')) if (p.is_file() or p.is_symlink()) and not exclu(ctx.rel(p))]
+
+
+EXT_ARCHIVES = {'.zip', '.tar', '.gz', '.tgz', '.7z', '.rar', '.bz2', '.xz'}
+EXT_CODE_CONNUES = (EXT_PYTHON | EXT_WEB | EXT_PHP | EXT_SHELL | EXT_NON_COUVERTES
+                    | {'.css', '.json', '.yml', '.yaml', '.xml', '.md', '.txt', '.sql', '.toml', '.ini', '.cfg', '.conf', '.csv'})
+RE_SENS_CACHE = re.compile('[\u202a-\u202e\u2066-\u2069]')   # caractères qui inversent l'affichage : le code lu n'est plus le code exécuté
+
+
+def nature_fichier_livre(ctx: Contexte, p: Chemin) -> str:
+    """Ce que le contrôle peut faire d'un fichier du paquet : lien, cle, certificat, programme, archive, illisible, binaire, gros ou texte."""
+    suffixe = p.suffix.lower()
+    if p.is_symlink():
+        return 'lien'
+    if any(fnmatch.fnmatch(p.name.lower(), motif) for motif in NOMS_DE_CLES):
+        return 'certificat' if ctx.est_texte(p) and 'PRIVATE KEY' not in (ctx.texte(p) or '') else 'cle'
+    if suffixe in EXT_EXECUTABLES:
+        return 'programme'
+    if suffixe in EXT_ARCHIVES:
+        return 'archive'
+    if not ctx.est_texte(p):
+        return 'illisible' if suffixe in EXT_CODE_CONNUES else 'binaire'
+    return 'gros' if p.stat().st_size > TAILLE_MAX_TEXTE else 'texte'
+
+
+def controle_fichiers_livres(ctx: Contexte) -> None:
+    """Passe en revue tout ce qui partirait dans le paquet et dit ce que le contrôle n'a pas pu lire."""
+    par_nature: dict[str, list[str]] = {}
+    for p in fichiers_du_paquet(ctx):
+        if p != ctx.racine / 'build' / 'fabriquer.py':
+            nature = nature_fichier_livre(ctx, p)
+            par_nature.setdefault(nature, []).append(ctx.rel(p))
+            if nature == 'texte' and p.suffix.lower() in EXT_CODE_CONNUES and RE_SENS_CACHE.search(ctx.texte(p) or ''):
+                par_nature.setdefault('sens', []).append(ctx.rel(p))
+    messages = (
+        ('lien', ctx.bilan.erreur, 'Lien symbolique dans le dossier ({}) : le paquet embarquerait un fichier extérieur au projet. Le remplacer par une copie'),
+        ('cle', ctx.bilan.erreur, 'Fichier de clé ou de secrets dans le dossier ({}) : il ne doit jamais partir dans un paquet ; les secrets vivent sur le serveur'),
+        ('illisible', ctx.bilan.erreur, 'Fichier de code illisible comme du texte ({}) : il contient des octets nuls et échapperait au contrôle. Le réenregistrer en texte'),
+        ('sens', ctx.bilan.erreur, 'Caractères cachés qui inversent l\'affichage ({}) : le code affiché n\'est pas celui qui s\'exécute. Les retirer'),
+        ('certificat', ctx.bilan.alerte, 'Certificat ou clé publique dans le dossier ({}) : vérifier qu\'il a bien sa place dans le paquet'),
+        ('programme', ctx.bilan.alerte, 'Programme compilé livré dans le paquet ({}) : le contrôle ne peut pas le lire. Dire d\'où il vient dans docs/composants.md, ou le retirer'),
+        ('archive', ctx.bilan.alerte, 'Archive livrée dans le paquet ({}) : son contenu n\'est pas contrôlé. La décompresser dans le projet, ou la retirer'),
+        ('gros', ctx.bilan.alerte, 'Fichier texte trop gros pour être lu ({}) : il part dans le paquet sans avoir été contrôlé'),
+    )
+    for nature, signaler, message in messages:
+        if par_nature.get(nature):
+            signaler(message.format(', '.join(par_nature[nature][:5])))
+    binaires = par_nature.get('binaire', [])
+    if binaires:
+        ctx.bilan.non_teste(f'{len(binaires)} fichier(s) livré(s) sans analyse du contenu (images, polices, documents…) : {", ".join(binaires[:6])}')
+
+
 def fabriquer_paquet(ctx: Contexte) -> Chemin:
     """Fabrique le zip et son empreinte SHA-256 (à comparer après tout transfert)."""
     dist = ctx.racine / 'dist'
@@ -1458,13 +1785,17 @@ def fabriquer_paquet(ctx: Contexte) -> Chemin:
     nom = f'{ctx.racine.name}_v{ctx.version}' + ('_brouillon' if ctx.brouillon else '')
     cible = dist / f'{nom}.zip'
     with zipfile.ZipFile(cible, 'w', zipfile.ZIP_DEFLATED) as archive:
-        for p in sorted(ctx.racine.rglob('*')):
-            relatif = p.relative_to(ctx.racine).as_posix()
-            if p.is_file() and not exclu(relatif):
-                archive.write(p, f'{ctx.racine.name}_v{ctx.version}/{relatif}')
+        for p in fichiers_du_paquet(ctx):
+            if not p.is_symlink():
+                archive.write(p, f'{ctx.racine.name}_v{ctx.version}/{ctx.rel(p)}')
     empreinte = hashlib.sha256(cible.read_bytes()).hexdigest()
     (dist / f'{nom}.zip.sha256').write_text(f'{empreinte}  {cible.name}\n', encoding='utf-8')
     return cible
+
+
+LIMITES_DU_CONTROLE = ('Ce contrôle lit le code à la recherche de défauts connus. Il ne prouve pas leur absence : un code qui '
+                       'cache ce qu\'il fait, ou un langage qu\'il ne connaît pas, peut lui échapper. Il ne remplace ni la relecture, '
+                       'ni l\'avis de la cybersécurité pour un outil sensible.')
 
 
 def ecrire_bilan(ctx: Contexte, paquet: Chemin | None) -> None:
@@ -1472,10 +1803,12 @@ def ecrire_bilan(ctx: Contexte, paquet: Chemin | None) -> None:
     dist.mkdir(exist_ok=True)
     bilan = ctx.bilan
     lignes = [f'# Bilan de fabrication — {ctx.racine.name} v{ctx.version or "?"}', '', f'Date : {ctx.aujourdhui.isoformat()}',
-              f'Contrôle : fabriquer.py {VERSION_CONTROLE}', '']
+              f'Contrôle : fabriquer.py {VERSION_CONTROLE} (empreinte {hashlib.sha256(Chemin(__file__).read_bytes()).hexdigest()[:16]})', '']
     rubriques = (('Réussi', bilan.ok), ('Erreurs (bloquantes)', bilan.erreurs), ('Alertes', bilan.alertes), ('Non testé', bilan.non_testes))
     for titre, elements in rubriques:
         lignes += [f'## {titre}', *([f'- {e}' for e in elements] or ['- aucun']), '']
+    lignes += [f'## Exemptions à relire ({len(bilan.exemptions)})', *([f'- {e}' for e in bilan.exemptions] or ['- aucune']), '',
+               '## Ce que ce contrôle ne garantit pas', LIMITES_DU_CONTROLE, '']
     lignes.append(f'Paquet : {paquet.name if paquet else "non fabriqué"}')
     (dist / 'bilan-fabrication.md').write_text('\n'.join(lignes) + '\n', encoding='utf-8')
 
@@ -1592,6 +1925,7 @@ def ecrire_fiche_registre(ctx: Contexte, paquet: Chemin | None) -> None:
               'Nature : outil maison (dossier de la skill fabrique-outils)',
               f'À quoi il sert : {a_quoi_ca_sert(ctx) or "à compléter"}',
               f'Format : {FORMATS_EN_CLAIR.get(ctx.format, ctx.format)} · niveau {ctx.niveau}',
+              f'Exemptions de contrôle à relire : {len(ctx.bilan.exemptions)}',
               f'Classe : {classe_outil(ctx)}' + ((' · mode dégradé : ' + ('écrit' if (ctx.racine / 'docs' / 'mode-degrade.md').exists() else 'à écrire'))
                                                   if numero_classe(ctx) == 1 else ''),
               f'Service demandeur : {valeur_readme(ctx, "Service demandeur")}',
@@ -1622,6 +1956,8 @@ def afficher(ctx: Contexte, paquet: Chemin | None) -> int:
             print(f'  {signe} {message}')
     for message in bilan.non_testes:
         print('  · non testé : ' + message)
+    for exemption in bilan.exemptions:
+        print('  · exemption à relire : ' + exemption)
     print(f'\nStatut : {statut_transmission(ctx)} (résumé pour la cellule : dist/dossier-transmission.md ; '
           'fiche à coller dans la fiche du registre : dist/fiche-registre.txt)')
     if bilan.erreurs:
@@ -1679,6 +2015,7 @@ def preparer(options: argparse.Namespace) -> Contexte:
 
 def controler(ctx: Contexte) -> None:
     controle_fichiers(ctx)
+    controle_fichiers_livres(ctx)
     controle_donnees_personnes(ctx)
     controle_version(ctx)
     controle_regles(ctx)
@@ -1686,6 +2023,7 @@ def controler(ctx: Contexte) -> None:
     controle_code(ctx)
     controle_secrets(ctx)
     controle_reseau(ctx)
+    controle_csp(ctx)
     requirements, verrous = controle_dependances(ctx)
     if ctx.format == 'B':
         controle_integration(ctx)
@@ -1695,6 +2033,9 @@ def controler(ctx: Contexte) -> None:
     controle_partage(ctx)
     controle_editeur(ctx)
     controle_classe(ctx)
+    if ctx.bilan.exemptions:
+        ctx.bilan.alerte(f'{len(ctx.bilan.exemptions)} exemption(s) de contrôle posée(s) dans le code : à relire par la cellule '
+                         '(liste et raisons dans dist/bilan-fabrication.md)')
     fiche_dsi(ctx)
 
 

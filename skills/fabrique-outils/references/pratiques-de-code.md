@@ -67,7 +67,7 @@ Dans tous les cas, `dist/dossier-transmission.md` est écrit : un résumé d'une
 | Dépendance ou image non figée ; secret ; appel réseau non déclaré | Conteneur en root, durcissement absent sans exception notée | |
 | Faille connue (`pip-audit`, `npm audit`, `trivy`), défaut `bandit` de gravité moyenne ou haute, erreur `ruff` | Essai de restauration absent ou ancien ; composant en fin de support dans 6 mois | |
 
-Un motif refusé mais justifié se marque sur la ligne : `nosec : raison` (code) ou `nosecret : raison` (exemple fictif de secret). La raison est obligatoire : elle sera lue à la relecture.
+Un motif refusé mais justifié se marque sur la ligne : `nosec : raison` (code) ou `nosecret : raison` (exemple fictif de secret). La raison est obligatoire : sans elle, le marqueur ne compte pas. Chaque exemption est recopiée dans `dist/bilan-fabrication.md` et comptée dans la fiche du registre : la cellule les relit une à une. Ne jamais poser une exemption pour faire passer le contrôle ; corriger d'abord.
 
 ## Options utiles de `fabriquer.py`
 

@@ -66,6 +66,20 @@ Aucune donnée réelle n'entre dans le dossier d'un outil : ni dans les exemples
 - Un outil qui a besoin d'exemples à clé juste (contrôle de RIB, par exemple) les déclare, un par ligne, dans `tests/donnees/exemples-fictifs.txt` : ils sont acceptés, leur nombre figure au bilan, et le référent confirme qu'ils sont inventés.
 - Les noms, adresses et dates de naissance ne se détectent pas automatiquement : la règle reste la même, et Claude ne demande jamais de fichier réel.
 
+### Ce que le contrôle lit, et ce qu'il ne garantit pas
+
+`fabriquer.py` lit **tout ce qui partirait dans le paquet**, quels que soient l'extension, l'encodage, le dossier ou la longueur des lignes. Ce qu'il ne peut pas lire (image, document, programme compilé, archive) est nommé dans le bilan : rien n'est sauté en silence.
+
+- **Adresses :** toute adresse écrite dans le code doit être déclarée, qu'elle soit dans l'appel, dans une constante ou dans un fichier de réglages. Une adresse construite à l'exécution (`'https://' + hôte`) est refusée : le contrôle ne peut pas en vérifier la destination.
+- **Format A :** la balise de sécurité (CSP) est obligatoire dès qu'un paquet est fabriqué. C'est la seule protection qui porte sur l'exécution réelle : le navigateur bloque lui-même tout appel hors liste, et refuse `eval()` même déguisé tant que la balise ne contient pas `'unsafe-eval'`.
+- **Format B :** le code du serveur peut appeler une adresse calculée ou reçue, que la lecture ne voit pas. Demander à la DSI de limiter les sorties du serveur aux hôtes de `reseau-autorise.txt`.
+- **Exemptions :** toujours motivées, toujours recopiées au bilan.
+- **Lignes très longues :** une bibliothèque embarquée contient souvent ce que le contrôle refuse ailleurs. Ce qu'il y trouve donne une alerte, à rapprocher de `docs/composants.md`.
+
+Ce contrôle cherche des défauts connus ; il ne prouve pas leur absence. Un code qui cache ce qu'il fait peut lui échapper : il ne remplace ni la relecture, ni l'avis de la cybersécurité pour un outil sensible. Avant une installation, la cellule relance le contrôle **avec la copie de la skill** (`python3 <skill>/scripts/fabriquer.py <projet>`), et non avec celle du projet : l'empreinte du script figure en tête du bilan.
+
+Les contournements connus sont rejoués par `scripts/autotest_surete.py` : un contournement signalé y devient un essai.
+
 ### Lecture de fichiers XML reçus
 
 Un fichier XML reçu se lit sans entités externes : `XMLParser(resolve_entities=False, no_network=True)` avec lxml, ou la bibliothèque `defusedxml`. Le contrôle le rappelle quand il voit une lecture XML sans analyseur réglé.

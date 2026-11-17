@@ -1,5 +1,6 @@
 # Historique
 
+- 0.1.1 (17/11/2026) : suit le correctif de sûreté de la skill de fabrication (`fabriquer.py` 1.2). La revue des outils signale les dossiers qui embarquent encore l'ancien contrôle : les remettre à niveau et les repasser au contrôle. Un composant noté « plus maintenu » compte comme un support terminé.
 - 0.1.0 (17/11/2026) : première version publique, issue d'un premier usage réel dans une collectivité territoriale. Les détails propres à son système d'information ont été retirés ; ce qui dépend de votre organisation se règle dans `environnement-collectivite.md` (skill de fabrication).
 
 ## Limites connues

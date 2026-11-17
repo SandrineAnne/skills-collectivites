@@ -16,9 +16,10 @@ Ouvrez un ticket « Problème » avec ce qui s’est passé, ce que vous attendi
 2. Les essais automatiques passent :
    ```bash
    python3 skills/fabrique-outils/scripts/autotest_fabrique.py
+   python3 skills/fabrique-outils/scripts/autotest_surete.py
    python3 skills/entretien-outils/scripts/autotest_entretien.py
    ```
-3. Une règle ajoutée a son essai. Une règle qui ralentirait l’agent qui crée doit être appliquée par Claude, ou n’être exigée qu’à l’installation : c’est la règle d’or des skills.
+3. Une règle ajoutée a son essai. Un contournement du contrôle devient une ligne de `autotest_surete.py`. Une règle qui ralentirait l’agent qui crée doit être appliquée par Claude, ou n’être exigée qu’à l’installation : c’est la règle d’or des skills.
 4. Rien de propre à votre organisation dans les fichiers communs : cela va dans `environnement-collectivite.md`.
 
 En proposant une contribution, vous acceptez qu’elle soit diffusée sous la licence EUPL 1.2 du dépôt.

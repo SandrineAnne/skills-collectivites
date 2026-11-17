@@ -1,6 +1,6 @@
 # Fabriquer et entretenir des outils avec l’IA — deux skills Claude
 
-**Version 0.1.0 · première ébauche publique · à tester, critiquer, améliorer.**
+**Version 0.1.1 · première ébauche publique · à tester, critiquer, améliorer.**
 
 Avec Claude, un agent peut fabriquer lui-même, en quelques heures, l’outil dont son service a besoin. Entretenir cet outil dure des années. Ces deux skills génériques encadrent les deux temps, pour toute collectivité ou administration qui veut laisser ses agents créer sans renoncer à la sûreté. Elles sont nées d’un premier usage au Département du Loiret ; nous les partageons pour que d’autres les essaient et nous aident à les améliorer.
 
@@ -26,21 +26,29 @@ Un même dossier suit chaque outil de la fabrication à l’entretien.
 ## Essayer les skills
 
 1. Lire [`docs/adapter-a-votre-collectivite.md`](docs/adapter-a-votre-collectivite.md) et remplir `skills/fabrique-outils/references/environnement-collectivite.md`.
-2. Fabriquer les paquets : un fichier `.skill` par dossier de `skills/` (archive zip du dossier), ou les télécharger depuis la page des versions du dépôt.
-3. Les ajouter à Claude comme skills (claude.ai ou Claude Cowork), selon la documentation d’Anthropic sur les skills.
-4. Lancer les essais automatiques (Python 3.10+, bibliothèque standard ; Node.js facultatif) :
+2. Installer les deux skills ensemble : `entretien-outils` va chercher les gabarits et le contrôle dans `fabrique-outils`.
+3. Fabriquer les paquets : un fichier `.skill` par dossier de `skills/` (archive zip du dossier), ou les télécharger depuis la page des versions du dépôt.
+4. Les ajouter à Claude comme skills (claude.ai ou Claude Cowork), selon la documentation d’Anthropic sur les skills.
+5. Lancer les essais automatiques (Python 3.10+, bibliothèque standard ; Node.js facultatif) :
 
 ```bash
 python3 skills/fabrique-outils/scripts/autotest_fabrique.py
+python3 skills/fabrique-outils/scripts/autotest_surete.py
 python3 skills/entretien-outils/scripts/autotest_entretien.py
 ```
+
+## Ce que le contrôle automatique garantit, et ce qu’il ne garantit pas
+
+Le contrôle lit tout ce qui part dans le paquet et refuse les défauts qu’il connaît : secret, donnée réelle de personne, adresse non déclarée, code dangereux. Il ne prouve pas leur absence : un code qui cache ce qu’il fait peut lui échapper. Pour un fichier HTML, une balise de sécurité fait bloquer par le navigateur tout appel hors de la liste déclarée ; pour une application sur serveur, c’est à la DSI de limiter les sorties. Le contrôle ne remplace ni la relecture, ni l’avis de la cybersécurité.
+
+Les contournements connus sont rejoués par `autotest_surete.py`. Vous en trouvez un autre ? Écrivez-nous selon [`SECURITY.md`](SECURITY.md) : il deviendra un essai.
 
 ## Ce qui n’est pas encore fait
 
 C’est une ébauche, et nous le disons franchement :
 
 - les skills n’ont pas encore été éprouvées sur un vrai incident ;
-- les playbooks de déploiement n’ont été essayés qu’avec un moteur de conteneurs simulé ;
+- les playbooks de déploiement ont été essayés sur un vrai Docker par un contributeur : six défauts sont connus et pas encore corrigés (contrôle de santé, retour arrière, dossier de données… voir le ticket n° 4) ;
 - les cas d’essai du comportement de Claude (`evals/evals.json`) n’ont pas encore été joués ;
 - la grille de vigilance est un modèle vide : chaque collectivité la remplit avec sa cybersécurité ;
 - le contenu est en français et pensé pour une collectivité française.
